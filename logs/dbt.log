@@ -3,3 +3,9 @@
 18:54:55.250805 [debug]: Requesting license from https://ts483.us1.dbt.com/api/private/accounts/70506183148400/feature-licenses/ with 1 key IDs: ["fusion-prod-2025-11-20"]
 18:54:55.421598 [debug]: License successfully retrieved from remote
 18:54:55.423566 [debug]: License cached to file for account 70506183148400
+==================== 2026-08-25T14:46:21.834563Z | 01a03962-f588-7721-b5b3-9e7035e309b9 ====================
+14:46:21.834835 [info ]: Installing dbt project and profile setup
+14:46:21.855999 [info ]: Info Created .vscode/extensions.json with dbt extension recommendation
+14:46:21.856285 [info ]: Success Project created successfully!
+14:46:21.856347 [info ]: Info Project name: jaffle_shop
+14:46:21.856385 [info ]: Info Project directory: jaffle_shop
