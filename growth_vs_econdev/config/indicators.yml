@@ -1,0 +1,9 @@
+# What the pipeline pulls. Change scope here, not in code.
+countries: [NGA, KEN, GHA, RWA, ZAF]
+start_year: 2000
+end_year: 2025
+indicators:
+  NY.GDP.MKTP.KD.ZG: gdp_growth_pct
+  SI.POV.DDAY: poverty_pct
+  IT.CEL.SETS.P2: mobile_per_100
+  SL.UEM.TOTL.ZS: unemployment_pct
