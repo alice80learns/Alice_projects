@@ -1,0 +1,3 @@
+[submodule "dbt-learn-gt-init"]
+	path = dbt-learn-gt-init
+	url = https://github.com/alice80learns/dbt-learn-gt-init.git
