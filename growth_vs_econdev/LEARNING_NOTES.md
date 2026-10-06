@@ -1,0 +1,270 @@
+# Learning Notes: Project 1 (Growth vs. Development)
+
+What each phase taught, what to watch out for, and how to talk about it in interviews.
+Phases 0–2 are complete. Phases 3–7 are previews and get filled in as each one is finished.
+
+**How to use this:** before an interview, read the "Interview questions" for each phase out loud and answer in your own words before reading the sample answer. If you can't explain something without looking, that's the part to revisit.
+
+---
+
+## Contents
+
+- [Phase 0: Setup](#phase-0-setup)
+- [Phase 1: Exploring the source](#phase-1-exploring-the-source)
+- [Phase 2: Ingestion](#phase-2-ingestion)
+- [Phase 3: dbt sources and staging (preview)](#phase-3-dbt-sources-and-staging-preview)
+- [Phase 4: Intermediate and mart models (preview)](#phase-4-intermediate-and-mart-models-preview)
+- [Phase 5: Tests and documentation (preview)](#phase-5-tests-and-documentation-preview)
+- [Phase 6: Analysis notebook (preview)](#phase-6-analysis-notebook-preview)
+- [Phase 7: README and demo (preview)](#phase-7-readme-and-demo-preview)
+- [Glossary](#glossary)
+
+---
+
+## Phase 0: Setup
+
+**In one sentence:** before writing any pipeline code, set up an environment that anyone can recreate and that keeps secrets out of git.
+
+### Key concepts
+
+| Concept | What it means | Where it is in this project |
+| --- | --- | --- |
+| Virtual environment | A private folder of Python packages for one project, so projects don't break each other | `.venv/` (activate with `source .venv/bin/activate`) |
+| Pinned dependencies | Recording the exact version of every package, so the project installs the same way on any machine | `requirements.txt` (made with `pip freeze`) |
+| `.gitignore` | A list of files git must never track: secrets, build output, the virtual environment | `growth_vs_econdev/.gitignore` |
+| Cloud project | A container in Google Cloud that holds resources and billing | `econdev-portfolio-alice` |
+| Dataset (BigQuery) | A folder of tables. Each layer gets its own | `raw` (ingestion output), `dbt_dev` (dbt output) |
+| Dataset location | The region where data is stored. Datasets that are queried together must share a location | Both are in `US` |
+| Two kinds of login | `gcloud auth login` logs in the command-line tool; `gcloud auth application-default login` gives your *code* credentials (ADC) | Python, dbt and Jupyter all use ADC |
+| Jupyter kernel | The Python environment a notebook runs in | `Python (econdev)` points at `.venv` |
+| Feature branch | A separate line of work in git, merged into `main` when ready | `alice_econdev` |
+
+### What to watch out for
+
+- **Never commit credentials.** No service-account key files in the repo. Use `gcloud` login locally; real production systems use a secrets manager.
+- **Wrong environment.** If a notebook or terminal uses a different Python, you'll get "module not found" errors or different package versions. Check for `(.venv)` in your prompt and `Python (econdev)` in Jupyter.
+- **Location mismatch.** A dataset in `EU` and another in `US` can't be joined in one query.
+- **Unpinned versions.** "It works on my machine" usually means different package versions.
+
+### Real problems we hit (good interview stories)
+
+1. **SSL certificate errors on install.** Python from python.org on macOS doesn't trust HTTPS certificates until you run `Install Certificates.command`. Fixed by pointing the install at a certificate bundle.
+2. **A package wouldn't install on an Intel Mac.** The newest `cryptography` release had no pre-built version for Intel Macs, so pip tried to compile it and failed. Fixed by telling pip to prefer pre-built versions (`--prefer-binary`) and pinning the result in `requirements.txt`.
+
+> Interviewers love "tell me about a time something broke." Environment problems are real engineering work: diagnosing them shows you read error messages instead of guessing.
+
+### Interview questions
+
+**Q: How do you make sure someone else can run your project?**
+A: Everything runs in a virtual environment with pinned versions in `requirements.txt`, configuration lives in a YAML file rather than in code, and the README lists the exact setup steps. Credentials come from each person's own Google login, so nothing secret is shared.
+
+**Q: How do you handle credentials?**
+A: They never touch the repo. Locally I use Application Default Credentials from `gcloud`. The `.gitignore` blocks key files and `.env` files as a second safety net.
+
+---
+
+## Phase 1: Exploring the source
+
+**In one sentence:** look at the real data before designing anything, because the source's quirks decide your design.
+
+### Key concepts
+
+| Concept | What it means | What we found |
+| --- | --- | --- |
+| Data profiling | Systematically checking a new dataset: shape, types, nulls, ranges, coverage | Done in `notebooks/exploratory.ipynb` |
+| API response shape | How the source packages its data | World Bank returns a 2-item list: `[page metadata, records]` |
+| Grain | What one row represents. Decide it before writing any SQL | One country, one indicator, one year |
+| Nested fields | Values inside other values | `indicator.id`, `country.value` need extracting |
+| Types | Whether a value is text, a number, a date | `date` arrives as text (`"2025"`) and must be cast |
+| Identifiers | Codes that identify things. Pick one and use it everywhere | 3-letter `countryiso3code` (not the 2-letter `country.id`) |
+| Coverage | How many expected values actually exist | GDP, unemployment: 26 of 26 years. Mobile: 25. Poverty: 3 to 6 |
+| Null vs zero | Null means "unknown / not measured"; zero is a real value | Poverty nulls mean "no survey that year", not "zero poverty" |
+
+### Two different kinds of missing data
+
+This distinction is subtle and impressive to explain:
+
+| Kind | Example | Cause | How to handle |
+| --- | --- | --- | --- |
+| **Structural gaps** | Poverty: only 3 to 6 values in 26 years | Measured by household surveys every few years | Keep nulls; compare between survey years; never pretend the gaps are real data |
+| **Publication lag** | Mobile: missing only 2025 | The newest year isn't published yet | Expected; will fill in on a future run |
+
+### Forward-filling: useful, but dangerous in the warehouse
+
+Forward-filling means repeating the last known value until a new one appears (for example, using Kenya's 2015 poverty rate for 2016 to 2019).
+
+- **The risk:** once filled in the warehouse, nobody can tell a measured value from a guess.
+- **Our approach:** the mart keeps nulls plus a `poverty_survey_year` column. If a chart needs a value every year, the notebook fills it and labels it as carried forward.
+
+### What to watch out for
+
+- **Assuming the data is complete.** Always build a coverage table (count non-null values per group).
+- **Treating null as zero.** That turns "unknown" into "nothing", which silently changes averages and trends.
+- **Indicator definitions change.** The World Bank moved its poverty line from $2.15 to $3.00 a day (2021 prices) in 2025, so older articles quote different numbers.
+
+### Interview questions
+
+**Q: What's the first thing you do with a new data source?**
+A: Profile it before building anything: look at the raw response, identify the grain, check types, and build a coverage table of how many values actually exist. In this project that showed poverty data only exists for 3 to 6 survey years per country, which shaped the whole analysis design.
+
+**Q: How did you handle missing data?**
+A: I separated two causes. Poverty has structural gaps because it comes from occasional surveys, so I keep nulls and compare change between survey years instead of year by year. Mobile is only missing the latest year because of publication lag, which is expected. I avoided forward-filling in the warehouse because it hides which values were actually measured.
+
+**Q: What's the grain of your data?**
+A: In staging, one row per country, indicator and year. In the final mart, one row per country and year, with one column per indicator.
+
+---
+
+## Phase 2: Ingestion
+
+**In one sentence:** move the data from the API into BigQuery unchanged, reliably, and safely rerunnable.
+
+### Where it fits: the "EL" of ELT
+
+- **ETL** (older): extract, transform in Python, then load the cleaned result.
+- **ELT** (modern): extract, load the raw data, then transform inside the warehouse with SQL (dbt).
+- **Why ELT:** raw data is kept, so a buggy transformation can be fixed and rebuilt without re-fetching. Transformations are SQL in version control: easy to test and review.
+
+Your ingestion is deliberately "dumb": it does no cleaning, renaming or calculation.
+
+### The code, in plain English
+
+| File | What it does |
+| --- | --- |
+| `config/indicators.yml` | Lists countries, years, indicators and the destination table |
+| `ingestion/worldbank_client.py` | `fetch_page`: one API request, with retries. `fetch_indicator`: loops over all pages |
+| `ingestion/ingest.py` | Fetches every indicator, turns records into rows, checks the row count, loads into BigQuery |
+| `tests/test_ingestion.py` | Checks the paging loop and row-building with fake data |
+
+Run it with `python -m ingestion.ingest`. Test it with `python -m pytest tests -v`.
+
+### Key concepts
+
+**1. Pagination.** APIs return data in pages. The loop requests page 1, 2, 3… until `page == pages`.
+Watch out: forgetting to page raises no error. You silently load only page 1.
+
+**2. Retries with exponential backoff.** On a network failure, wait and try again with growing pauses (2s, then 4s).
+- *Transient errors* (timeouts, dropped connections, 5xx server errors): retry; they often succeed next time.
+- *Permanent errors* (4xx, such as a bad indicator code): fail immediately; asking again won't help.
+- *Timeouts:* every request has a 30-second limit, so a hung connection can't freeze the pipeline.
+- Real example: during testing, the World Bank API dropped the connection twice and the retries recovered automatically.
+
+**3. Raw layer design.** Each row stores:
+- `payload`: the complete original record as JSON text. Nothing is lost.
+- `indicator_id`, `country_iso3`, `year`: copied out for easy filtering, still as text (staging casts types).
+- `ingested_at`: when *our pipeline* loaded it.
+- `source_last_updated`: when *the World Bank* last revised the indicator.
+
+The last two are metadata. They answer "how fresh is this?" and "did the source change?"
+
+**4. Idempotency.** Running the pipeline twice gives the same result as running it once.
+- We use `WRITE_TRUNCATE`: replace the table's contents each run. Verified: two runs, still 520 unique rows.
+- `WRITE_APPEND` would duplicate everything on every rerun.
+- Trade-off: we keep only the latest snapshot, not a history. Fine here because the World Bank keeps history. The alternative is appending with a run id and keeping only the latest run in staging.
+
+**5. Validate before loading.** The script checks it built exactly 520 rows (5 countries × 4 indicators × 26 years) before touching BigQuery, and stops without loading if not.
+Principle: a pipeline that fails loudly gets fixed; one that loads half the data quietly produces wrong dashboards nobody notices.
+
+**6. Configuration over hard-coding.** Changing scope (add a country, change years) is a config edit, not a code change. Project 2 reuses the same client with different indicators.
+
+**7. Testing with fakes (mocking).** Tests replace the real API call with a fake that returns made-up pages.
+- Fast (about 1 second), free (no API or BigQuery), repeatable (same answer every time).
+- They test *our logic* (are pages combined correctly?), not whether the internet works.
+- `assert` lines state what must be true; any failed assert or crash fails the test.
+- Passing tests prove the cases they check, not everything. That's why we also ran the real load and queried the result.
+
+**8. Observability.** Logs record counts per indicator, including nulls (`104 with null value` for poverty). If that number changes unexpectedly, the source changed.
+
+### What to watch out for
+
+| Risk | How the pipeline handles it |
+| --- | --- |
+| Missing pages | Paging loop + a test with 3 fake pages |
+| Network blips | Retries with backoff + timeouts |
+| Duplicates on rerun | `WRITE_TRUNCATE` (idempotent) |
+| Partial or broken loads | Row-count check before loading |
+| Buggy transformations | Raw data kept unchanged, so you can rebuild |
+| Source revisions | `source_last_updated` recorded |
+| Leaked credentials | `gcloud` login, `.gitignore`, no keys in code |
+| Silent data changes | Null counts in logs (dbt tests come in Phase 5) |
+
+### Interview questions
+
+**Q: Walk me through your ingestion.**
+A: A Python script reads the indicator list from config, calls the World Bank API for each one, following pagination and retrying transient errors with backoff. Each record is stored unchanged as JSON with a few key columns and load metadata. Before loading, it checks the row count matches what's expected, then loads to a BigQuery raw table with a truncate-and-replace so reruns don't duplicate.
+
+**Q: What happens if your pipeline runs twice?**
+A: Nothing bad. The load replaces the table instead of appending, so it's idempotent. I verified it: two runs, still 520 unique rows.
+
+**Q: What if the API is down or slow?**
+A: Transient failures are retried up to three times with exponential backoff, and every request has a timeout. If it still fails, the script raises an error and loads nothing, so there's never partial data in the warehouse.
+
+**Q: Why store raw JSON instead of a clean table?**
+A: So transformations can be fixed and rebuilt without re-fetching, and so there's an untouched record of exactly what the source sent. It also means a new field the source adds later is already captured.
+
+**Q: Why WRITE_TRUNCATE and not incremental loads?**
+A: The whole dataset is 520 rows, so a full refresh is simple, cheap and always consistent. I'd switch to incremental loads if the data were large or if I needed to keep a history of source revisions.
+
+**Q: How did you test it?**
+A: Unit tests with a fake API cover the paging logic and row building, so they're fast and don't depend on the network. Then an end-to-end run, run twice, confirmed the row count and that there were no duplicates.
+
+---
+
+## Phase 3: dbt sources and staging (preview)
+
+**Coming up:** dbt reads `raw.worldbank_indicators` as a *source* and builds `stg_worldbank__indicators`.
+
+Concepts you'll meet (some are familiar from the jaffle_shop course):
+- **Sources** (`source()`): declare raw tables dbt didn't create, so lineage starts at the raw layer.
+- **Source freshness:** a check that warns if `ingested_at` gets too old (the pipeline stopped).
+- **Staging conventions:** one model per source table; rename, cast types, extract nested JSON; no business logic.
+- **Parsing JSON in SQL:** `JSON_VALUE(payload, '$.value')`, the SQL version of `record["value"]`.
+- **Views vs tables (materialisation):** staging as views (always fresh, no storage).
+
+## Phase 4: Intermediate and mart models (preview)
+
+- **Pivoting:** from one row per country-indicator-year to one row per country-year with a column per indicator.
+- **Grain changes:** each model's grain must be stated and tested.
+- **Handling sparse data honestly:** nulls plus a `poverty_survey_year` column.
+- **Facts and dimensions:** the foundation for Project 2's dimensional model.
+
+## Phase 5: Tests and documentation (preview)
+
+- **Generic tests:** `not_null`, `unique`, `accepted_values`, `relationships`.
+- **Grain tests:** unique combination of columns.
+- **Range tests:** percentages between 0 and 100 catch parsing bugs.
+- **Docs and lineage graph:** `dbt docs generate`; the graph shows every layer at a glance.
+
+## Phase 6: Analysis notebook (preview)
+
+- **Reading only from the mart**, never raw tables.
+- **Correlation vs causation:** say "moved together", not "caused".
+- **Stating limitations:** sparse poverty data, modeled unemployment estimates.
+
+## Phase 7: README and demo (preview)
+
+- **Telling the story:** question, architecture, how to run, findings, limitations.
+- **A 5-minute walkthrough:** trace one number from the final chart back to the raw API record.
+
+---
+
+## Glossary
+
+| Term | Meaning |
+| --- | --- |
+| ADC | Application Default Credentials: the Google login your code uses |
+| API | A web address that returns data instead of a web page |
+| Backoff | Waiting longer between each retry |
+| Bronze / raw layer | Data exactly as the source sent it |
+| ELT | Extract, Load, then Transform inside the warehouse |
+| Grain | What one row represents |
+| Idempotent | Running it twice gives the same result as once |
+| Kernel | The Python environment a notebook runs in |
+| Mart | Final, analysis-ready table |
+| Materialisation | How dbt builds a model: view, table, incremental |
+| Metadata | Data about data (when loaded, when revised) |
+| Mocking | Replacing a real dependency with a fake in tests |
+| Pagination | Splitting a large API result across numbered pages |
+| Staging | Cleaned, typed, renamed copy of a source table |
+| Transient error | A temporary failure that may succeed on retry |
+| `WRITE_TRUNCATE` | BigQuery load mode that replaces the table's contents |
