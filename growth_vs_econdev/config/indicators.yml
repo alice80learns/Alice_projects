@@ -7,3 +7,8 @@ indicators:
   SI.POV.DDAY: poverty_pct
   IT.CEL.SETS.P2: mobile_per_100
   SL.UEM.TOTL.ZS: unemployment_pct
+
+# Where the raw data lands. Project ids are not secrets; credentials are never stored here.
+bigquery:
+  project: econdev-portfolio-alice
+  raw_table: raw.worldbank_indicators
