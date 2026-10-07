@@ -1,7 +1,7 @@
 # Learning Notes: Project 1 (Growth vs. Development)
 
 What each phase taught, what to watch out for, and how to talk about it in interviews.
-Phases 0–4 are complete. Phases 5–7 are previews and get filled in as each one is finished.
+Phases 0–5 are complete. Phases 6–7 are previews and get filled in as each one is finished.
 
 **How to use this:** before an interview, read the "Interview questions" for each phase out loud and answer in your own words before reading the sample answer. If you can't explain something without looking, that's the part to revisit.
 
@@ -14,7 +14,7 @@ Phases 0–4 are complete. Phases 5–7 are previews and get filled in as each o
 - [Phase 2: Ingestion](#phase-2-ingestion)
 - [Phase 3: dbt sources and staging](#phase-3-dbt-sources-and-staging)
 - [Phase 4: Intermediate and mart models](#phase-4-intermediate-and-mart-models)
-- [Phase 5: Tests and documentation (preview)](#phase-5-tests-and-documentation-preview)
+- [Phase 5: Tests and documentation](#phase-5-tests-and-documentation)
 - [Phase 6: Analysis notebook (preview)](#phase-6-analysis-notebook-preview)
 - [Phase 7: README and demo (preview)](#phase-7-readme-and-demo-preview)
 - [Glossary](#glossary)
@@ -459,12 +459,99 @@ A: No. The table shows the two moved in opposite directions over the same years;
 
 > "The raw data is long, one row per country, indicator and year. I pivoted it to one row per country and year, so every indicator for a year sits side by side, and I checked the non-null counts matched before and after. Poverty is only surveyed every few years, so I built a second mart at a different grain, one row per country per pair of back-to-back surveys. It compares how much poverty changed between two surveys with how much the economy grew over those same years, with unemployment as extra context."
 
-## Phase 5: Tests and documentation (preview)
+## Phase 5: Tests and documentation
 
-- **Generic tests:** `not_null`, `unique`, `accepted_values`, `relationships`.
-- **Grain tests:** unique combination of columns.
-- **Range tests:** percentages between 0 and 100 catch parsing bugs.
-- **Docs and lineage graph:** `dbt docs generate`; the graph shows every layer at a glance.
+**In one sentence:** turn every check we did by hand into automated dbt tests that run on each build, and generate a documentation site that explains the project to anyone.
+
+### What we added
+
+| File | What it does |
+| --- | --- |
+| `econdev_dbt/packages.yml` | Installs `dbt_utils` (ready-made tests). Run `dbt deps` once after cloning |
+| `econdev_dbt/package-lock.yml` | Pins the exact package version (1.4.1), so everyone installs the same one |
+| Tests in each `_*.yml` file | 39 generic tests on the source, staging, intermediate and marts |
+| `econdev_dbt/tests/assert_pivot_keeps_every_value.sql` | A custom test: the pivot must not lose any values |
+| `econdev_dbt/models/overview.md` | The front page of the docs site |
+
+Commands, from inside `econdev_dbt/`: `dbt build` (build and test everything), `dbt test` (tests only), `dbt docs generate` then `dbt docs serve` (opens the docs site in your browser; Ctrl+C to stop).
+
+### Key concepts
+
+**1. Two kinds of dbt test.**
+- *Generic tests* are reusable and declared in YAML against a column or model: `not_null`, `unique`, `accepted_values`, `relationships`, plus package tests like `dbt_utils.unique_combination_of_columns`.
+- *Singular tests* are one-off SQL files in `tests/`. The rule for both: **a test is a query that returns the bad rows; it passes when it returns nothing.**
+
+**2. What each test protects against.**
+
+| Test | Where | Catches |
+| --- | --- | --- |
+| `unique_combination_of_columns` | Every layer | Grain bugs: double loads, join fan-out, a broken pivot |
+| `not_null` | Keys and required columns | Missing keys, broken JSON extraction |
+| `accepted_values` (countries, indicator names) | Source, staging | Unexpected countries; an indicator added to config but not mapped in staging |
+| `accepted_range` (0–100 for percentages) | Intermediate | Units or parsing bugs, e.g. a value of 4000% |
+| `equal_rowcount` | `fct_growth_vs_development` | The mart adding or dropping rows |
+| `expression_is_true` (`end_year > start_year`) | Spans mart | Broken `lag` logic |
+| `relationships` | Spans mart | A span for a country that doesn't exist in the main mart |
+| `assert_pivot_keeps_every_value` | Custom | The pivot silently losing values |
+
+**3. Test the source too.** Tests on the raw table catch problems at the door (double loads, unexpected countries) before any model is built on them.
+
+**4. Severity: error vs warn.** Most tests fail the build. The GDP growth range (−30% to +30%) only *warns*, because real growth can be extreme (war, pandemic). Use `warn` for "this looks unusual, have a look" and `error` for "this is definitely wrong".
+
+**5. `dbt build` stops bad data spreading.** Tests run straight after each model. If a model's tests fail, everything downstream is **skipped**, so the marts keep their last good version instead of being rebuilt from bad data.
+
+**6. See a test fail before trusting it.** We deliberately broke the pivot (mislabelled poverty). The custom test failed, and `dbt build` skipped both marts. A test you've never seen fail might not be testing anything.
+
+**7. Documentation is generated from what you already wrote.** `dbt docs generate` combines the YAML descriptions, the SQL, the tests and the column types from BigQuery into a website with a **lineage graph**. Descriptions are written once, next to the code, so they stay up to date.
+
+**8. Packages and lock files.** `packages.yml` says which packages you want; `package-lock.yml` records the exact version installed. Commit both; never commit `dbt_packages/` (it's re-downloadable, like `.venv/`).
+
+### What to watch out for
+
+| Risk | What happens | How we guard against it |
+| --- | --- | --- |
+| Tests that never fail | False confidence | Broke the pivot on purpose and watched the test catch it |
+| Too many warnings | People learn to ignore them | `warn` only where unusual values are genuinely possible |
+| Testing only the marts | Problems found late and hard to trace | Tests at every layer, starting with the source |
+| `unique` on one column when the grain is several | Test can't express the real grain | `unique_combination_of_columns` |
+| Hard-coded expected values (e.g. 5 countries) | Test fails when scope changes on purpose | Update the test with the config; that failure is a useful reminder |
+| Range tests too tight or too loose | Noise, or bugs slip through | Ranges based on what's physically possible (0–100%) |
+| Old test syntax | Deprecation warnings in dbt 1.10+ | Test parameters go under `arguments:` |
+
+### Interview questions
+
+**Q: How do you test your dbt models?**
+A: At every layer. The source has grain, not-null and accepted-values tests, so bad loads are caught at the door. Each model has a unique-combination test on its grain, range tests on percentages, and a row-count test where a model shouldn't change the number of rows. I also wrote a custom test that checks the pivot keeps every value. 40 tests run on every `dbt build`.
+
+**Q: What's the difference between a generic and a singular test?**
+A: A generic test is reusable and configured in YAML, like `not_null` or `unique`. A singular test is a one-off SQL query in the `tests/` folder for logic specific to my project. Both work the same way: the query returns failing rows, and zero rows means pass.
+
+**Q: What's the single most important test?**
+A: A uniqueness test on each model's grain. Most serious data bugs, like duplicate loads or join fan-out, show up as broken grain, and they silently inflate every sum and average downstream.
+
+**Q: What happens when a test fails?**
+A: With `dbt build`, the failing model's downstream models are skipped, so bad data doesn't reach the marts and they keep their last good version. I tested this by breaking the pivot on purpose: the custom test failed and both marts were skipped.
+
+**Q: When would you use `severity: warn`?**
+A: When an unusual value could still be real. GDP growth outside ±30% is rare but possible, so it warns for a human to check rather than blocking the pipeline. A percentage over 100 is impossible, so that fails.
+
+**Q: How do you document your project?**
+A: Descriptions for every model and column live in YAML next to the SQL, plus an overview page. `dbt docs generate` turns them into a website with column types and a lineage graph, so a new person can see what each table is, its grain, and where it comes from.
+
+### Must-know checklist
+
+- [ ] A dbt test is a query returning bad rows; zero rows = pass
+- [ ] Generic vs singular tests
+- [ ] Which test protects the grain, and why it matters most
+- [ ] What `dbt build` does when a test fails (skips downstream)
+- [ ] Error vs warn severity, with an example of each
+- [ ] Why test the source, not just the marts
+- [ ] What the docs site shows and where its content comes from
+- [ ] `packages.yml` vs `package-lock.yml` vs `dbt_packages/`
+
+### Explain-back prompt
+
+In a few sentences: what does a dbt test actually do, which test you'd keep if you could only have one (and why), and what happened when we broke the pivot.
 
 ## Phase 6: Analysis notebook (preview)
 
@@ -491,6 +578,7 @@ A: No. The table shows the two moved in opposite directions over the same years;
 | Freshness | How old the newest data is; dbt can warn when it gets too old |
 | Lineage | The map of which tables feed which; dbt draws it from `source()` and `ref()` |
 | Long vs wide | Long: one row per measurement. Wide: one row per entity-period, one column per measure |
+| Package | Reusable dbt code from the community, e.g. `dbt_utils` |
 | Pivot | Turning long data into wide data |
 | Percentage points (pp) | The difference between two percentages: 40% to 35% is −5 pp (a 12.5% relative fall) |
 | Window function | A calculation across related rows that keeps every row (`lag`, rolling `avg`) |
@@ -498,11 +586,14 @@ A: No. The table shows the two moved in opposite directions over the same years;
 | Grain | What one row represents |
 | Idempotent | Running it twice gives the same result as once |
 | Kernel | The Python environment a notebook runs in |
+| Generic test | A reusable dbt test declared in YAML (`not_null`, `unique`, …) |
 | Mart | Final, analysis-ready table |
 | Materialisation | How dbt builds a model: view, table, incremental |
 | Metadata | Data about data (when loaded, when revised) |
 | Mocking | Replacing a real dependency with a fake in tests |
 | Pagination | Splitting a large API result across numbered pages |
+| Severity | Whether a failing test errors (stops the build) or only warns |
+| Singular test | A one-off SQL test in `tests/`; returns the failing rows |
 | `ref()` | dbt function that points at another dbt model |
 | `source()` | dbt function that points at a table dbt didn't build (e.g. the raw table) |
 | Staging | Cleaned, typed, renamed copy of a source table |

@@ -6,18 +6,54 @@ models:
       Staging pivoted from long to wide: one row per country and year
       (5 countries x 26 years = 130 rows), one column per indicator.
       Nulls are kept: a null means that indicator wasn't measured that year.
+    data_tests:
+      # Grain: the pivot must produce exactly one row per country and year
+      - dbt_utils.unique_combination_of_columns:
+          arguments:
+            combination_of_columns: [country_iso3, year]
     columns:
       - name: country_iso3
         description: "ISO 3166-1 alpha-3 country code"
+        data_tests:
+          - not_null
       - name: country_name
         description: "Country name as the World Bank spells it"
+        data_tests:
+          - not_null
       - name: year
         description: "Calendar year"
+        data_tests:
+          - not_null
       - name: gdp_growth_pct
         description: "Annual GDP growth, % (NY.GDP.MKTP.KD.ZG)"
+        data_tests:
+          # Plausibility check, not a hard rule: real growth can be extreme
+          # (war, pandemic), so this warns instead of failing the build.
+          - dbt_utils.accepted_range:
+              arguments:
+                min_value: -30
+                max_value: 30
+              config:
+                severity: warn
       - name: poverty_pct
         description: "% of population below $3.00 a day, 2021 PPP (SI.POV.DDAY). Null in non-survey years"
+        data_tests:
+          - dbt_utils.accepted_range:
+              arguments:
+                min_value: 0
+                max_value: 100
       - name: mobile_per_100
         description: "Mobile cellular subscriptions per 100 people (IT.CEL.SETS.P2). Can exceed 100"
+        data_tests:
+          # Over 100 is normal (people own several SIMs), but over 250 would suggest a units bug
+          - dbt_utils.accepted_range:
+              arguments:
+                min_value: 0
+                max_value: 250
       - name: unemployment_pct
         description: "Unemployment, % of labour force, modeled ILO estimate (SL.UEM.TOTL.ZS)"
+        data_tests:
+          - dbt_utils.accepted_range:
+              arguments:
+                min_value: 0
+                max_value: 100

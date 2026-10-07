@@ -6,17 +6,44 @@ models:
       World Bank indicators, cleaned and typed. One row per country, indicator
       and year (5 countries x 4 indicators x 26 years = 520 rows). Nulls in
       `value` are kept: they mean the indicator wasn't measured that year.
+    data_tests:
+      # Grain: one row per country, indicator and year
+      - dbt_utils.unique_combination_of_columns:
+          arguments:
+            combination_of_columns: [country_iso3, indicator_name, year]
     columns:
       - name: country_iso3
         description: "ISO 3166-1 alpha-3 country code"
+        data_tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: [NGA, KEN, GHA, RWA, ZAF]
       - name: indicator_id
         description: "World Bank indicator code"
+        data_tests:
+          - not_null
       - name: year
         description: "Calendar year"
+        data_tests:
+          - not_null
+          - dbt_utils.accepted_range:
+              arguments:
+                min_value: 2000
+                max_value: 2025
       - name: country_name
         description: "Country name as the World Bank spells it"
+        data_tests:
+          - not_null
       - name: indicator_name
         description: "Short snake_case name used as a column name in later models"
+        data_tests:
+          # Null here means an indicator was added to config/indicators.yml
+          # but not to the CASE statement in the staging model.
+          - not_null
+          - accepted_values:
+              arguments:
+                values: [gdp_growth_pct, poverty_pct, mobile_per_100, unemployment_pct]
       - name: indicator_label
         description: "The World Bank's full indicator name, including units"
       - name: value

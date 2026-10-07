@@ -7,13 +7,25 @@ models:
       indicator plus derived trends. Use for year-by-year charts. Poverty is
       null in years without a survey; filter on is_poverty_survey_year to see
       only measured values.
+    data_tests:
+      - dbt_utils.unique_combination_of_columns:
+          arguments:
+            combination_of_columns: [country_iso3, year]
+      # The mart adds columns but must never add or drop rows
+      - dbt_utils.equal_rowcount:
+          arguments:
+            compare_model: ref('int_indicators_pivoted')
     columns:
       - name: country_iso3
         description: "ISO 3166-1 alpha-3 country code"
+        data_tests:
+          - not_null
       - name: country_name
         description: "Country name"
       - name: year
         description: "Calendar year"
+        data_tests:
+          - not_null
       - name: gdp_growth_pct
         description: "Annual GDP growth, %"
       - name: gdp_growth_5yr_avg
@@ -22,6 +34,8 @@ models:
         description: "% of population below $3.00 a day (2021 PPP). Null in non-survey years"
       - name: is_poverty_survey_year
         description: "True when poverty_pct holds a real survey measurement for this year"
+        data_tests:
+          - not_null
       - name: unemployment_pct
         description: "Unemployment, % of labour force (modeled ILO estimate)"
       - name: unemployment_change_pp
@@ -37,27 +51,54 @@ models:
       change in poverty between two surveys with GDP growth over the same years.
       This is the main table for answering "is growth translating into
       broad-based development?", because poverty is only measured in survey years.
+    data_tests:
+      - dbt_utils.unique_combination_of_columns:
+          arguments:
+            combination_of_columns: [country_iso3, start_year]
+      # A span must move forward in time
+      - dbt_utils.expression_is_true:
+          arguments:
+            expression: "end_year > start_year"
     columns:
       - name: country_iso3
         description: "ISO 3166-1 alpha-3 country code"
+        data_tests:
+          - not_null
+          # Every span's country must exist in the country-year mart
+          - relationships:
+              arguments:
+                to: ref('fct_growth_vs_development')
+                field: country_iso3
       - name: country_name
         description: "Country name"
       - name: start_year
         description: "Year of the earlier survey"
+        data_tests:
+          - not_null
       - name: end_year
         description: "Year of the later survey"
+        data_tests:
+          - not_null
       - name: span_years
         description: "Years between the two surveys"
       - name: poverty_start_pct
         description: "Poverty rate at the earlier survey, %"
+        data_tests:
+          - not_null
       - name: poverty_end_pct
         description: "Poverty rate at the later survey, %"
+        data_tests:
+          - not_null
       - name: poverty_change_pp
         description: "Change in poverty, percentage points. Negative = poverty fell"
       - name: avg_gdp_growth_pct
         description: "Average annual GDP growth over the years after start_year up to end_year"
+        data_tests:
+          - not_null
       - name: cumulative_gdp_growth_pct
         description: "Total compounded GDP growth over the span, %"
+        data_tests:
+          - not_null
       - name: unemployment_start_pct
         description: "Unemployment in start_year, %"
       - name: unemployment_end_pct

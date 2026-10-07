@@ -20,16 +20,34 @@ sources:
           freshness:
             warn_after: {count: 35, period: day}
             error_after: {count: 60, period: day}
+        data_tests:
+          # Grain: one row per indicator, country and year. Catches double loads.
+          - dbt_utils.unique_combination_of_columns:
+              arguments:
+                combination_of_columns: [indicator_id, country_iso3, year]
         columns:
           - name: indicator_id
             description: "World Bank indicator code, e.g. NY.GDP.MKTP.KD.ZG"
+            data_tests:
+              - not_null
           - name: country_iso3
             description: "ISO 3166-1 alpha-3 country code, e.g. GHA"
+            data_tests:
+              - not_null
+              - accepted_values:
+                  arguments:
+                    values: [NGA, KEN, GHA, RWA, ZAF]
           - name: year
             description: "Year as text, exactly as the API sent it"
+            data_tests:
+              - not_null
           - name: payload
             description: "The full API record as JSON text"
+            data_tests:
+              - not_null
           - name: source_last_updated
             description: "When the World Bank last revised this indicator (YYYY-MM-DD text)"
           - name: ingested_at
             description: "When the ingestion run loaded this row (UTC)"
+            data_tests:
+              - not_null
