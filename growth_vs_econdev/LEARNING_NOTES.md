@@ -1,7 +1,7 @@
 # Learning Notes: Project 1 (Growth vs. Development)
 
 What each phase taught, what to watch out for, and how to talk about it in interviews.
-Phases 0–2 are complete. Phases 3–7 are previews and get filled in as each one is finished.
+Phases 0–3 are complete. Phases 4–7 are previews and get filled in as each one is finished.
 
 **How to use this:** before an interview, read the "Interview questions" for each phase out loud and answer in your own words before reading the sample answer. If you can't explain something without looking, that's the part to revisit.
 
@@ -12,7 +12,7 @@ Phases 0–2 are complete. Phases 3–7 are previews and get filled in as each o
 - [Phase 0: Setup](#phase-0-setup)
 - [Phase 1: Exploring the source](#phase-1-exploring-the-source)
 - [Phase 2: Ingestion](#phase-2-ingestion)
-- [Phase 3: dbt sources and staging (preview)](#phase-3-dbt-sources-and-staging-preview)
+- [Phase 3: dbt sources and staging](#phase-3-dbt-sources-and-staging)
 - [Phase 4: Intermediate and mart models (preview)](#phase-4-intermediate-and-mart-models-preview)
 - [Phase 5: Tests and documentation (preview)](#phase-5-tests-and-documentation-preview)
 - [Phase 6: Analysis notebook (preview)](#phase-6-analysis-notebook-preview)
@@ -210,16 +210,84 @@ A: Unit tests with a fake API cover the paging logic and row building, so they'r
 
 ---
 
-## Phase 3: dbt sources and staging (preview)
+## Phase 3: dbt sources and staging
 
-**Coming up:** dbt reads `raw.worldbank_indicators` as a *source* and builds `stg_worldbank__indicators`.
+**In one sentence:** dbt takes over from Python: it reads the raw table as a declared *source* and builds a clean, typed staging model, all as version-controlled SQL.
 
-Concepts you'll meet (some are familiar from the jaffle_shop course):
-- **Sources** (`source()`): declare raw tables dbt didn't create, so lineage starts at the raw layer.
-- **Source freshness:** a check that warns if `ingested_at` gets too old (the pipeline stopped).
-- **Staging conventions:** one model per source table; rename, cast types, extract nested JSON; no business logic.
-- **Parsing JSON in SQL:** `JSON_VALUE(payload, '$.value')`, the SQL version of `record["value"]`.
-- **Views vs tables (materialisation):** staging as views (always fresh, no storage).
+### What dbt actually is
+
+dbt doesn't move data and doesn't store it. It's a tool that **runs your SQL `select` statements inside the warehouse and saves the results as views or tables**, in the right order. What it adds on top of plain SQL:
+- **Dependencies:** `source()` and `ref()` tell dbt which models depend on which, so it builds them in order and draws the lineage graph.
+- **Tests and docs** in YAML next to the models (Phase 5).
+- **Environments:** the same code can build into a dev dataset or a production one.
+
+### The files, in plain English
+
+| File | What it does |
+| --- | --- |
+| `econdev_dbt/dbt_project.yml` | Project settings: name, folders, and how each layer is materialised |
+| `econdev_dbt/profiles.yml` | How to connect to BigQuery (`method: oauth` = your gcloud login; no secrets, safe to commit) |
+| `models/staging/_worldbank__sources.yml` | Declares the raw table as a source, with a freshness check |
+| `models/staging/stg_worldbank__indicators.sql` | The staging model: casts types, pulls fields out of the JSON |
+| `models/staging/_worldbank__models.yml` | Describes the staging model and every column |
+
+Run from inside `econdev_dbt/`: `dbt debug` (test connection), `dbt build --select staging` (build + test), `dbt source freshness`.
+
+### Key concepts
+
+**1. Sources vs refs.** `{{ source('worldbank', 'worldbank_indicators') }}` points at a table dbt did *not* build (ingestion loaded it). `{{ ref('model_name') }}` points at a model dbt *did* build. Never hard-code table names: these functions are how dbt knows the build order and draws lineage.
+
+**2. Source freshness.** `loaded_at_field: ingested_at` plus `warn_after: 35 days` / `error_after: 60 days`. `dbt source freshness` checks how old the newest `ingested_at` is. It catches the silent failure where ingestion stops running and everything downstream quietly goes stale.
+
+**3. Staging conventions.** One staging model per source table, and staging only does:
+- **Cast types:** `year` text to `INT64`; `value` to `FLOAT64`; `source_last_updated` text to `DATE`.
+- **Extract:** `JSON_VALUE(payload, '$.country.value')` is the SQL version of `record["country"]["value"]`.
+- **Rename** to clear, consistent names (`indicator_name` like `gdp_growth_pct`).
+- **No filtering and no business logic.** Nulls stay. Any decisions about the data happen in later layers, where they're visible.
+
+**4. CTE structure.** The model is written as `with source as (...), renamed as (...) select * from renamed`. Each CTE (common table expression) is one named step, so the SQL reads top to bottom like a recipe. This is the standard dbt style.
+
+**5. Materialisation.** Staging is a **view**: a saved query that always shows the latest raw data and uses no storage. Marts will be **tables**: stored results, fast to query. Set per folder in `dbt_project.yml`.
+
+**6. `cast` vs `safe_cast`.** We use `cast`, which **fails** if a value can't be converted. `safe_cast` would quietly turn bad values into null. In staging you want loud failures, so a source format change gets noticed instead of becoming mysterious nulls.
+
+**7. Verify, don't assume.** After building, we queried the model: 520 rows, 520 unique grain combinations, years 2000 to 2025, every indicator mapped, 109 nulls (matching the ingestion logs). Then we investigated a surprising value (below).
+
+### A real data surprise: mobile subscriptions of 0.02
+
+The minimum `mobile_per_100` looked like 0.0. Investigating showed Nigeria at 0.02 subscriptions per 100 people in 2000, because Nigeria's GSM networks launched in 2001. Real history, not a bug. The habit: **when a value looks wrong, query the rows behind it before deciding**.
+
+### What to watch out for
+
+| Risk | What happens | How we guard against it |
+| --- | --- | --- |
+| Hard-coded table names | dbt can't see dependencies; lineage breaks | Always `source()` / `ref()` |
+| Silent type failures | Bad values turn into nulls unnoticed | `cast`, not `safe_cast`, in staging |
+| Business logic in staging | Decisions get buried where nobody looks | Staging only casts, extracts, renames |
+| Stale data | Pipeline stopped, dashboards look fine | Source freshness check |
+| Location mismatch | "Dataset not found in location" errors | Profile `location: US` matches the datasets |
+| New indicator added to config | `indicator_name` comes out null | Phase 5 test: `indicator_name` not null |
+| Credentials in profiles | Leaked secrets | `method: oauth`; profile holds no secrets |
+
+### Interview questions
+
+**Q: What does dbt do in your pipeline?**
+A: dbt handles everything after the raw load. It reads the raw table as a declared source, then builds staging, intermediate and mart models in BigQuery as SQL `select` statements. It works out the build order from `source()` and `ref()`, runs tests, and generates documentation and a lineage graph.
+
+**Q: What's the difference between `source()` and `ref()`?**
+A: `source()` points at a table something else loaded, here the raw table from my Python ingestion. `ref()` points at another dbt model. Both replace hard-coded table names so dbt knows the dependencies.
+
+**Q: What goes in a staging model, and what doesn't?**
+A: Only light cleaning: casting types, extracting fields from the JSON, and renaming. No filtering, joins or business logic. That keeps staging a reliable, one-to-one cleaned copy of the source, and puts real decisions in later layers where they're visible and tested.
+
+**Q: Why are your staging models views and your marts tables?**
+A: Views are saved queries: always up to date and no storage cost, which suits a thin cleaning layer. Marts are what people query repeatedly, so storing them as tables makes queries fast and consistent.
+
+**Q: How would you know if your ingestion stopped running?**
+A: A dbt source freshness check on `ingested_at` warns after 35 days and errors after 60. Once orchestration runs it on a schedule, a stalled pipeline gets flagged instead of silently going stale.
+
+**Q: Why `cast` instead of `safe_cast`?**
+A: `cast` fails loudly if the source sends something unexpected. `safe_cast` would turn it into a null, and I'd end up with missing data that looks like a real gap. In staging I'd rather the build break.
 
 ## Phase 4: Intermediate and mart models (preview)
 
@@ -256,6 +324,9 @@ Concepts you'll meet (some are familiar from the jaffle_shop course):
 | API | A web address that returns data instead of a web page |
 | Backoff | Waiting longer between each retry |
 | Bronze / raw layer | Data exactly as the source sent it |
+| CTE | Common table expression: a named step in a SQL query (`with name as (...)`) |
+| Freshness | How old the newest data is; dbt can warn when it gets too old |
+| Lineage | The map of which tables feed which; dbt draws it from `source()` and `ref()` |
 | ELT | Extract, Load, then Transform inside the warehouse |
 | Grain | What one row represents |
 | Idempotent | Running it twice gives the same result as once |
@@ -265,6 +336,8 @@ Concepts you'll meet (some are familiar from the jaffle_shop course):
 | Metadata | Data about data (when loaded, when revised) |
 | Mocking | Replacing a real dependency with a fake in tests |
 | Pagination | Splitting a large API result across numbered pages |
+| `ref()` | dbt function that points at another dbt model |
+| `source()` | dbt function that points at a table dbt didn't build (e.g. the raw table) |
 | Staging | Cleaned, typed, renamed copy of a source table |
 | Transient error | A temporary failure that may succeed on retry |
 | `WRITE_TRUNCATE` | BigQuery load mode that replaces the table's contents |

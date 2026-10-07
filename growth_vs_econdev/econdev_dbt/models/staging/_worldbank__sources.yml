@@ -1,0 +1,35 @@
+version: 2
+
+# A source = a table dbt did NOT build (here: loaded by ingestion/ingest.py).
+# Declaring it lets models use {{ source('worldbank', 'worldbank_indicators') }}
+# instead of a hard-coded table name, and puts the raw table on the lineage graph.
+sources:
+  - name: worldbank
+    description: "World Bank Indicators API data, landed unchanged by ingestion/ingest.py"
+    database: econdev-portfolio-alice   # the GCP project
+    schema: raw                         # the BigQuery dataset
+    tables:
+      - name: worldbank_indicators
+        description: >
+          One row per country, indicator and year, exactly as the API returned it.
+          Fully replaced on every ingestion run (WRITE_TRUNCATE).
+        config:
+          # Freshness: warn if ingestion hasn't run for 35 days, fail after 60.
+          # Check with: dbt source freshness
+          loaded_at_field: ingested_at
+          freshness:
+            warn_after: {count: 35, period: day}
+            error_after: {count: 60, period: day}
+        columns:
+          - name: indicator_id
+            description: "World Bank indicator code, e.g. NY.GDP.MKTP.KD.ZG"
+          - name: country_iso3
+            description: "ISO 3166-1 alpha-3 country code, e.g. GHA"
+          - name: year
+            description: "Year as text, exactly as the API sent it"
+          - name: payload
+            description: "The full API record as JSON text"
+          - name: source_last_updated
+            description: "When the World Bank last revised this indicator (YYYY-MM-DD text)"
+          - name: ingested_at
+            description: "When the ingestion run loaded this row (UTC)"

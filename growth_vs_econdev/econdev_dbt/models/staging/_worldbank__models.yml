@@ -1,0 +1,27 @@
+version: 2
+
+models:
+  - name: stg_worldbank__indicators
+    description: >
+      World Bank indicators, cleaned and typed. One row per country, indicator
+      and year (5 countries x 4 indicators x 26 years = 520 rows). Nulls in
+      `value` are kept: they mean the indicator wasn't measured that year.
+    columns:
+      - name: country_iso3
+        description: "ISO 3166-1 alpha-3 country code"
+      - name: indicator_id
+        description: "World Bank indicator code"
+      - name: year
+        description: "Calendar year"
+      - name: country_name
+        description: "Country name as the World Bank spells it"
+      - name: indicator_name
+        description: "Short snake_case name used as a column name in later models"
+      - name: indicator_label
+        description: "The World Bank's full indicator name, including units"
+      - name: value
+        description: "The measurement. Null = no data for that country and year"
+      - name: source_last_updated
+        description: "When the World Bank last revised this indicator"
+      - name: ingested_at
+        description: "When the ingestion run loaded this row (UTC)"

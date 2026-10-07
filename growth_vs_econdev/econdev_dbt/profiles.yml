@@ -1,0 +1,17 @@
+# How dbt connects to BigQuery. Safe to commit: it holds no secrets.
+# method: oauth means "use my gcloud login" (Application Default Credentials).
+#
+# dbt reads a profiles.yml in the folder you run it from before falling back to
+# ~/.dbt/profiles.yml, so running dbt from econdev_dbt/ always uses this file.
+econdev:
+  target: dev
+  outputs:
+    dev:
+      type: bigquery
+      method: oauth
+      project: econdev-portfolio-alice
+      dataset: dbt_dev        # every model is built into this dataset
+      location: US            # must match the raw dataset's location
+      threads: 4
+      job_execution_timeout_seconds: 300
+      priority: interactive
