@@ -1,7 +1,7 @@
 # Learning Notes: Project 1 (Growth vs. Development)
 
 What each phase taught, what to watch out for, and how to talk about it in interviews.
-Phases 0–3 are complete. Phases 4–7 are previews and get filled in as each one is finished.
+Phases 0–4 are complete. Phases 5–7 are previews and get filled in as each one is finished.
 
 **How to use this:** before an interview, read the "Interview questions" for each phase out loud and answer in your own words before reading the sample answer. If you can't explain something without looking, that's the part to revisit.
 
@@ -13,7 +13,7 @@ Phases 0–3 are complete. Phases 4–7 are previews and get filled in as each o
 - [Phase 1: Exploring the source](#phase-1-exploring-the-source)
 - [Phase 2: Ingestion](#phase-2-ingestion)
 - [Phase 3: dbt sources and staging](#phase-3-dbt-sources-and-staging)
-- [Phase 4: Intermediate and mart models (preview)](#phase-4-intermediate-and-mart-models-preview)
+- [Phase 4: Intermediate and mart models](#phase-4-intermediate-and-mart-models)
 - [Phase 5: Tests and documentation (preview)](#phase-5-tests-and-documentation-preview)
 - [Phase 6: Analysis notebook (preview)](#phase-6-analysis-notebook-preview)
 - [Phase 7: README and demo (preview)](#phase-7-readme-and-demo-preview)
@@ -289,12 +289,84 @@ A: A dbt source freshness check on `ingested_at` warns after 35 days and errors 
 **Q: Why `cast` instead of `safe_cast`?**
 A: `cast` fails loudly if the source sends something unexpected. `safe_cast` would turn it into a null, and I'd end up with missing data that looks like a real gap. In staging I'd rather the build break.
 
-## Phase 4: Intermediate and mart models (preview)
+## Phase 4: Intermediate and mart models
 
-- **Pivoting:** from one row per country-indicator-year to one row per country-year with a column per indicator.
-- **Grain changes:** each model's grain must be stated and tested.
-- **Handling sparse data honestly:** nulls plus a `poverty_survey_year` column.
-- **Facts and dimensions:** the foundation for Project 2's dimensional model.
+**In one sentence:** reshape the clean data into tables shaped for the question, changing the grain deliberately and checking that nothing was lost along the way.
+
+### The models and their grain
+
+| Model | Layer | Grain (one row per…) | Rows | Built as |
+| --- | --- | --- | --- | --- |
+| `stg_worldbank__indicators` | Staging | country, indicator, year | 520 | view |
+| `int_indicators_pivoted` | Intermediate | country, year (4 indicator columns) | 130 | view |
+| `fct_growth_vs_development` | Mart | country, year (+ trends) | 130 | table |
+| `fct_poverty_survey_spans` | Mart | country, pair of consecutive surveys | 21 | table |
+
+Every model reads the one before it with `{{ ref(...) }}`, so dbt builds them in order.
+
+### Key concepts
+
+**1. Long vs wide, and pivoting.**
+- *Long* (staging): one row per measurement. Easy to load and test, awkward to compare indicators.
+- *Wide* (intermediate and marts): one row per country-year, one column per indicator. Easy to compare and chart.
+- *How:* conditional aggregation, `max(case when indicator_name = 'gdp_growth_pct' then value end)`, grouped by country and year. The `max` is only there because SQL needs an aggregate; each group has at most one value per indicator. BigQuery also has a `PIVOT` operator; conditional aggregation works in every SQL dialect.
+
+**2. Grain changes are the riskiest step.** Every change of grain can lose or duplicate data. We checked: non-null counts were identical in staging, intermediate and mart (130 / 26 / 125 / 130), and both marts have zero duplicate keys.
+
+**3. Why an intermediate layer?** The pivot is reused by both marts. Doing it once, in its own model, means one place to fix and test it. Intermediate models are building blocks, not things people query directly.
+
+**4. Window functions** (calculations across related rows, without collapsing them like `group by` does):
+- `lag(x) over (partition by country order by year)`: the previous year's value, used for year-on-year change.
+- `avg(x) over (… rows between 4 preceding and current row)`: a 5-year rolling average.
+- `partition by` keeps each country separate; `order by` sets the sequence; a named `window` clause avoids repeating the definition.
+- Guard against misleading early values: the rolling average is only filled once 5 years exist.
+
+**5. Filtering belongs in the right layer.** `fct_poverty_survey_spans` filters to survey years. That's a deliberate analysis decision, so it lives in a mart (documented) and not in staging (where it would be hidden). This is the explain-back question from Phase 3 in practice.
+
+**6. Design the table around what the data can support.** Poverty exists only in survey years, so year-by-year comparisons with GDP are meaningless. The spans mart compares *change between two surveys* with *growth over the same years*. That's the honest grain for the business question.
+
+**7. Compounding.** Growth of 5% then 5% is 10.25% in total, not 10%. `exp(sum(ln(1 + g/100))) - 1` multiplies yearly rates in SQL (there's no `product()` aggregate). It's a small detail that shows care.
+
+**8. Fact tables.** Both marts are named `fct_` because each row records measurements (facts) at a stated grain. Country names sit directly on the rows for now; Project 2 splits those into proper dimension tables (`dim_country`, `dim_year`).
+
+### First look at the results
+
+A few spans already tell different stories (to be explored properly in Phase 6):
+- **Rwanda 2016 to 2023:** poverty fell 25 percentage points alongside steady growth (55% cumulative): growth looks broad-based.
+- **Kenya 2015 to 2020:** the economy grew 20%, yet poverty *rose* 6.7 points: growth not reaching the poorest.
+- **Nigeria 2018 to 2022:** almost no growth (0.9%) and poverty rose 7.6 points.
+- **South Africa 2014 to 2022:** poverty fell 10.5 points with only 5.5% growth, while unemployment rose 8.4 points: something other than growth drove it (a question to research, not assume).
+
+Caveat: survey methods can change between rounds, so big jumps should be checked against World Bank notes before drawing conclusions.
+
+### What to watch out for
+
+| Risk | What happens | How we guard against it |
+| --- | --- | --- |
+| Pivot loses values | Indicators silently disappear | Non-null counts compared across layers |
+| Join or pivot duplicates rows | Inflated averages and counts | Duplicate-key checks (tests in Phase 5) |
+| Filtering the wide table on one indicator | Drops the other indicators for those years | Never filter `fct_growth_vs_development`; spans mart filters deliberately |
+| Window without `partition by` | Kenya's previous year becomes Ghana's last year | Always partition by country |
+| Rolling average on too few years | Early values look precise but aren't | Only filled when 5 years exist |
+| Adding growth rates instead of compounding | Understates total growth | `exp(sum(ln(...)))` |
+| Reading correlation as cause | Overstated conclusions | Phase 6 phrases findings carefully |
+
+### Interview questions
+
+**Q: Walk me through your model layers.**
+A: Staging is one row per country, indicator and year: cleaned and typed. An intermediate model pivots that to one row per country-year with a column per indicator. Two marts build on it: a country-year fact table with trends like a 5-year rolling growth average, and a survey-span table that compares poverty change between consecutive surveys with GDP growth over the same years.
+
+**Q: How do you make sure a transformation doesn't lose data?**
+A: I state the grain of every model and check it. For the pivot I compared non-null counts per indicator across staging, intermediate and mart, and checked the marts have no duplicate keys. In Phase 5 those checks become automated dbt tests.
+
+**Q: Why did you build the survey-span table?**
+A: Poverty is only measured every few years, so comparing it with GDP year by year would mean comparing against mostly empty values or invented ones. The span table matches each poverty change with growth over exactly the same years, which is the comparison the data actually supports.
+
+**Q: What's a window function and where did you use one?**
+A: A calculation across related rows that keeps every row, unlike `group by`. I used `lag` for year-on-year changes and a 5-year rolling average of GDP growth, both partitioned by country so countries never mix.
+
+**Q: Why an intermediate model rather than pivoting inside each mart?**
+A: Both marts need the same pivot. Doing it once means one definition to test and fix, and the marts stay focused on their own logic.
 
 ## Phase 5: Tests and documentation (preview)
 
@@ -327,6 +399,10 @@ A: `cast` fails loudly if the source sends something unexpected. `safe_cast` wou
 | CTE | Common table expression: a named step in a SQL query (`with name as (...)`) |
 | Freshness | How old the newest data is; dbt can warn when it gets too old |
 | Lineage | The map of which tables feed which; dbt draws it from `source()` and `ref()` |
+| Long vs wide | Long: one row per measurement. Wide: one row per entity-period, one column per measure |
+| Pivot | Turning long data into wide data |
+| Percentage points (pp) | The difference between two percentages: 40% to 35% is −5 pp (a 12.5% relative fall) |
+| Window function | A calculation across related rows that keeps every row (`lag`, rolling `avg`) |
 | ELT | Extract, Load, then Transform inside the warehouse |
 | Grain | What one row represents |
 | Idempotent | Running it twice gives the same result as once |

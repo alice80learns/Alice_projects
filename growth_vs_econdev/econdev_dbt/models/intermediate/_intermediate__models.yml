@@ -1,0 +1,23 @@
+version: 2
+
+models:
+  - name: int_indicators_pivoted
+    description: >
+      Staging pivoted from long to wide: one row per country and year
+      (5 countries x 26 years = 130 rows), one column per indicator.
+      Nulls are kept: a null means that indicator wasn't measured that year.
+    columns:
+      - name: country_iso3
+        description: "ISO 3166-1 alpha-3 country code"
+      - name: country_name
+        description: "Country name as the World Bank spells it"
+      - name: year
+        description: "Calendar year"
+      - name: gdp_growth_pct
+        description: "Annual GDP growth, % (NY.GDP.MKTP.KD.ZG)"
+      - name: poverty_pct
+        description: "% of population below $3.00 a day, 2021 PPP (SI.POV.DDAY). Null in non-survey years"
+      - name: mobile_per_100
+        description: "Mobile cellular subscriptions per 100 people (IT.CEL.SETS.P2). Can exceed 100"
+      - name: unemployment_pct
+        description: "Unemployment, % of labour force, modeled ILO estimate (SL.UEM.TOTL.ZS)"
