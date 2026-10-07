@@ -289,6 +289,45 @@ A: A dbt source freshness check on `ingested_at` warns after 35 days and errors 
 **Q: Why `cast` instead of `safe_cast`?**
 A: `cast` fails loudly if the source sends something unexpected. `safe_cast` would turn it into a null, and I'd end up with missing data that looks like a real gap. In staging I'd rather the build break.
 
+### Must-know checklist
+
+You should be able to explain each of these in a sentence or two without notes:
+- [ ] What dbt does and doesn't do: it runs SQL in the warehouse; it doesn't move or store data itself
+- [ ] `source()` vs `ref()`, and why hard-coded table names break lineage
+- [ ] What a source freshness check catches
+- [ ] The three staging jobs (cast, extract, rename) and the three things staging must *not* do (filter, join, apply business logic)
+- [ ] View vs table, and which layer uses which
+- [ ] `cast` vs `safe_cast`
+- [ ] Why the raw layer keeps the whole JSON payload, and staging parses it
+- [ ] The grain of the staging model (one row per country, indicator and year)
+
+### More concept questions (likely follow-ups)
+
+**Q: What's the difference between `dbt run`, `dbt test` and `dbt build`?**
+A: `run` builds the models. `test` runs the tests against what's already built. `build` does both, in dependency order, and skips a model's downstream models if its tests fail, so bad data doesn't flow further. I use `build`.
+
+**Q: What does dbt actually send to BigQuery?**
+A: Plain SQL. dbt first *compiles* the model: it replaces the Jinja (`{{ ref(...) }}`, `{{ source(...) }}`) with real table names and wraps the `select` in a `create view` or `create table` statement. You can see the compiled SQL in `target/compiled/`, which is the first place to look when debugging.
+
+**Q: What materialisations exist besides view and table?**
+A: *Incremental*: only processes new or changed rows on each run, for large tables where a full rebuild is too slow or expensive. *Ephemeral*: not built at all; dbt inlines it as a CTE into the models that use it. My data is small, so views and tables are the simplest correct choice. I'd move a big fact table to incremental if it grew to millions of rows.
+
+**Q: Why store the raw JSON and parse it in dbt, instead of parsing in Python?**
+A: If I parse during ingestion and get it wrong, or need a field I didn't extract, I have to re-call the API. With the full payload in raw, I can fix or extend parsing in SQL and rebuild, with no re-ingestion. It also keeps a faithful record of exactly what the source sent.
+
+**Q: What are dev and prod targets?**
+A: `profiles.yml` can define several targets pointing at different datasets. I build into `dbt_dev` while developing; a production run would use a `prod` target, so experiments never overwrite what people are using. Same code, different destination.
+
+**Q: Why CTEs instead of nested subqueries?**
+A: Each CTE is a named step, read top to bottom, so the logic is easy to follow and review. Nested subqueries are read inside out. BigQuery optimises both the same way, so readability wins.
+
+**Q: The source changes a column format overnight. What happens in your pipeline?**
+A: Ingestion still loads it, because raw stores the payload as text. The staging `cast` then fails, so `dbt build` fails *before* anything downstream gets wrong numbers. I'd see the error, look at the raw rows, and update the staging model.
+
+### Explain-back: polished version
+
+> "dbt picks up after ingestion. I declare the raw table as a source with a freshness check, so I'd know if loading stopped. The staging model is a one-to-one cleaned copy of raw: it casts types, extracts fields from the JSON and renames them, at one row per country, indicator and year. It does no filtering, so no data is dropped before anyone can see it. Staging is a view because it's thin and should always reflect raw; marts are tables because they're queried repeatedly. Models reference each other with `ref()`, which is how dbt knows the build order."
+
 ## Phase 4: Intermediate and mart models
 
 **In one sentence:** reshape the clean data into tables shaped for the question, changing the grain deliberately and checking that nothing was lost along the way.
@@ -367,6 +406,58 @@ A: A calculation across related rows that keeps every row, unlike `group by`. I 
 
 **Q: Why an intermediate model rather than pivoting inside each mart?**
 A: Both marts need the same pivot. Doing it once means one definition to test and fix, and the marts stay focused on their own logic.
+
+### Must-know checklist
+
+- [ ] The grain of every model (see the table at the top of this phase), and how it changes at each step
+- [ ] Long vs wide, and how conditional aggregation pivots one into the other
+- [ ] How to check a grain change didn't lose or duplicate rows
+- [ ] Window function vs `group by`
+- [ ] `lag`, rolling averages, `partition by`, `order by` and the window frame (`rows between …`)
+- [ ] Why the spans mart exists (poverty is measured only every few years)
+- [ ] Why filtering happens in the mart, not in staging
+- [ ] Compounding vs adding growth rates
+- [ ] Percent vs percentage points
+- [ ] What a fact table is, and what a dimension table would add
+
+### More concept questions (likely follow-ups)
+
+**Q: What is "grain", and why do you keep talking about it?**
+A: The grain is what one row represents, for example "one country in one year". Every other decision depends on it: what joins are safe, what can be summed, and what the unique key is. Most data bugs are grain bugs: a join that turns one row into three, or a pivot that silently drops values.
+
+**Q: Window function vs `group by`?**
+A: `group by` collapses rows: 26 years become one row per country. A window function computes across related rows but keeps every row, so each year gets its own rolling average or previous-year value.
+
+**Q: What does `lag` return for a country's first year?**
+A: Null, because there's no previous row in that partition. That's correct: the 2000 year-on-year change is genuinely unknown, and it shouldn't be treated as zero.
+
+**Q: How does `avg` treat nulls, and why does it matter here?**
+A: `avg` ignores nulls. So a "5-year" average over a window with two missing years is really a 3-year average, which looks just as precise. That's why the rolling average is only filled when `count(gdp_growth_pct)` over the window equals 5.
+
+**Q: `rows between` vs `range between`?**
+A: `rows` counts physical rows: "the 4 rows before this one". `range` uses the values in the `order by` column: "years within 4 of this one". With exactly one row per country-year they give the same answer. If years could be missing, `range` would be the safer way to say "last 5 calendar years".
+
+**Q: A join suddenly doubled your row count. How do you debug it?**
+A: That's a fan-out: the join key isn't unique on one side. I check the grain of each input by grouping by the join key and looking for counts above 1, then fix the key or deduplicate before joining. A unique-combination test on each model's grain catches this automatically.
+
+**Q: In the spans mart, why an inner join for growth but left joins for unemployment?**
+A: Every span must have growth years, or the row is meaningless, so an inner join is correct. Unemployment is extra context; a left join keeps the span even if unemployment were missing for one of the years.
+
+**Q: Percent vs percentage points?**
+A: Poverty going from 40% to 30% is a fall of 10 *percentage points*, but a 25 *percent* fall relative to where it started. I report poverty change in percentage points (the `_pp` suffix) so there's no ambiguity.
+
+**Q: Why not use BigQuery's `PIVOT` operator?**
+A: It works, but conditional aggregation runs in every SQL dialect and makes each column's logic explicit. Either is fine; I'd mention I know both.
+
+**Q: What's a fact table, and what would a dimension table add?**
+A: A fact table holds measurements at a stated grain, here indicator values per country-year. A dimension table holds descriptive attributes for things you filter and group by, for example `dim_country` with region and income group. Facts join to dimensions by key, which is a star schema. I'll add dimensions in Project 2.
+
+**Q: Your mart shows Kenya's economy grew while poverty rose. Does growth cause poverty?**
+A: No. The table shows the two moved in opposite directions over the same years; it doesn't show why. Possible explanations include where the growth happened, population growth, or changes in survey methods. I present it as a question worth investigating, not a conclusion.
+
+### Explain-back: polished version
+
+> "The raw data is long, one row per country, indicator and year. I pivoted it to one row per country and year, so every indicator for a year sits side by side, and I checked the non-null counts matched before and after. Poverty is only surveyed every few years, so I built a second mart at a different grain, one row per country per pair of back-to-back surveys. It compares how much poverty changed between two surveys with how much the economy grew over those same years, with unemployment as extra context."
 
 ## Phase 5: Tests and documentation (preview)
 
