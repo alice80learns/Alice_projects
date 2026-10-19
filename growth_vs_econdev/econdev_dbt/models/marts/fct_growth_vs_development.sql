@@ -17,6 +17,7 @@ final as (
 
         -- growth
         gdp_growth_pct,
+        gdp_per_capita_growth_pct,
         -- 5-year rolling average smooths out single good or bad years.
         -- Only filled once 5 years of data exist, so early years aren't misleading.
         case
@@ -27,9 +28,14 @@ final as (
         -- development
         poverty_pct,
         poverty_pct is not null as is_poverty_survey_year,
+        income_share_bottom20_pct,
 
         unemployment_pct,
         unemployment_pct - lag(unemployment_pct) over by_year as unemployment_change_pp,
+        vulnerable_employment_pct,
+
+        electricity_access_pct,
+        life_expectancy_years,
 
         mobile_per_100,
         mobile_per_100 - lag(mobile_per_100) over by_year as mobile_change_per_100

@@ -22,6 +22,11 @@ renamed as (
             when 'SI.POV.DDAY' then 'poverty_pct'
             when 'IT.CEL.SETS.P2' then 'mobile_per_100'
             when 'SL.UEM.TOTL.ZS' then 'unemployment_pct'
+            when 'NY.GDP.PCAP.KD.ZG' then 'gdp_per_capita_growth_pct'
+            when 'SL.EMP.VULN.ZS' then 'vulnerable_employment_pct'
+            when 'SI.DST.FRST.20' then 'income_share_bottom20_pct'
+            when 'EG.ELC.ACCS.ZS' then 'electricity_access_pct'
+            when 'SP.DYN.LE00.IN' then 'life_expectancy_years'
         end as indicator_name,
         json_value(payload, '$.indicator.value') as indicator_label,
 

@@ -15,8 +15,9 @@ Phases 0–5 are complete. Phases 6–7 are previews and get filled in as each o
 - [Phase 3: dbt sources and staging](#phase-3-dbt-sources-and-staging)
 - [Phase 4: Intermediate and mart models](#phase-4-intermediate-and-mart-models)
 - [Phase 5: Tests and documentation](#phase-5-tests-and-documentation)
-- [Phase 6: Analysis notebook (preview)](#phase-6-analysis-notebook-preview)
-- [Phase 7: README and demo (preview)](#phase-7-readme-and-demo-preview)
+- [Phase 6: Analysis notebook](#phase-6-analysis-notebook)
+- [Phase 7: README and demo](#phase-7-readme-and-demo)
+- [Extension: five more indicators](#extension-five-more-indicators)
 - [Glossary](#glossary)
 
 ---
@@ -660,6 +661,58 @@ A: Add population for growth per person, a job-quality measure, and an Airflow D
 Do the walkthrough out loud with a timer, twice. Aim for under 5 minutes without reading the script.
 
 ---
+
+## Extension: five more indicators
+
+**In one sentence:** extend the project from 4 to 9 indicators to answer questions the first version couldn't: growth per person, who benefits, job quality, living standards and health.
+
+### What we added
+
+| Indicator | Code | Why |
+| --- | --- | --- |
+| GDP growth per person | `NY.GDP.PCAP.KD.ZG` | Fixes "growth isn't per person" |
+| Income share of the poorest 20% | `SI.DST.FRST.20` | Measures "who benefits" directly |
+| Vulnerable employment | `SL.EMP.VULN.ZS` | Fixes "unemployment misses informal work" |
+| Access to electricity | `EG.ELC.ACCS.ZS` | A living standard people feel directly |
+| Life expectancy | `SP.DYN.LE00.IN` | A health outcome measured every year |
+
+Changed: `config/indicators.yml`, the staging `CASE`, the pivot, both marts, the YAML tests and the custom pivot test. **Not changed: the ingestion code.** Raw went from 520 to 1,170 rows; tests went from 40 to 48.
+
+### Key concepts
+
+**1. Config-driven design pays off.** Because ingestion reads its scope from config, adding 5 indicators needed no Python changes. That's the payoff of the Phase 0 decision.
+
+**2. Profile before you add.** Every candidate was checked for coverage across all 5 countries first. Household consumption per person looked ideal but has no Nigeria data, so it was rejected. One missing country would have put a footnote on every comparison.
+
+**3. Check that data lines up before you join it.** Before putting the poorest-20% share into the survey-span mart, we checked it comes from exactly the same survey years as poverty (0 mismatches in every country). A `not_null` test on the span columns now guards that assumption.
+
+**4. New data can change the conclusion.** The answer stayed "only partly", but Rwanda's story got stronger and Kenya became a genuine puzzle. Be ready to update findings rather than defend them.
+
+**5. Extending a pipeline is a normal change, not a rebuild.** The layers stayed the same; each layer just gained columns and tests.
+
+### What to watch out for
+
+| Risk | How we guard against it |
+| --- | --- |
+| Adding to config but forgetting staging's `CASE` | `accepted_values` and `not_null` on `indicator_name` fail the build |
+| The pivot silently dropping a new column's values | The custom pivot test now counts all 9 indicators |
+| Definition changes inside a series (Rwanda's electricity jump after 2021) | Flagged in the notebook and README limitations |
+| Comparing income-based and consumption-based surveys | Compare changes within a country, not levels across countries |
+
+### Interview questions
+
+**Q: How hard is it to add a new data source or indicator to your pipeline?**
+A: For a new World Bank indicator: a config line, a staging mapping, a pivot column and its tests. No ingestion code changes. I added 5 indicators that way, and the tests caught anything I forgot.
+
+**Q: How did you choose which indicators to add?**
+A: Each one had to fix a known weakness in the analysis, and have full coverage for all 5 countries. I rejected household consumption because Nigeria has no data.
+
+**Q: What did the new data change?**
+A: Per person, Nigeria and South Africa have been getting poorer since 2015. The poorest 20%'s share rose in four countries, but with no link to how fast the economy grew. And Kenya became a puzzle: GDP per person and the poorest's share rose, yet poverty didn't fall.
+
+### Explain-back prompt
+
+In a few sentences: what did you change to add the new indicators (and what didn't you change), how did you decide which indicators to add, and which new finding changes the story the most.
 
 ## Glossary
 

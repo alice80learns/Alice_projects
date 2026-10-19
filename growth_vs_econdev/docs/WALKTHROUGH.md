@@ -93,7 +93,7 @@ Open in the browser:
 
 Show the lineage graph in the dbt docs site.
 
-> "Every layer is tested: 40 dbt tests, including a grain test on every model so duplicates can't silently inflate the numbers. I broke the pivot on purpose to make sure the tests catch it, and `dbt build` skipped both marts. The whole thing rebuilds from scratch with two commands: `python -m ingestion.ingest` and `dbt build`."
+> "Every layer is tested: 48 dbt tests, including a grain test on every model so duplicates can't silently inflate the numbers. I broke the pivot on purpose to make sure the tests catch it, and `dbt build` skipped both marts. The whole thing rebuilds from scratch with two commands: `python -m ingestion.ingest` and `dbt build`."
 
 ## Likely follow-up questions
 

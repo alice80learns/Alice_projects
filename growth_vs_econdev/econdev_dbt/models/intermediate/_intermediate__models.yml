@@ -4,7 +4,7 @@ models:
   - name: int_indicators_pivoted
     description: >
       Staging pivoted from long to wide: one row per country and year
-      (5 countries x 26 years = 130 rows), one column per indicator.
+      (5 countries x 26 years = 130 rows), one column per indicator (9 indicators).
       Nulls are kept: a null means that indicator wasn't measured that year.
     data_tests:
       # Grain: the pivot must produce exactly one row per country and year
@@ -57,3 +57,42 @@ models:
               arguments:
                 min_value: 0
                 max_value: 100
+      - name: gdp_per_capita_growth_pct
+        description: "Annual GDP growth per person, % (NY.GDP.PCAP.KD.ZG). GDP growth minus population growth, roughly"
+        data_tests:
+          # Same reasoning as gdp_growth_pct: extreme years are rare but real, so warn only
+          - dbt_utils.accepted_range:
+              arguments:
+                min_value: -30
+                max_value: 30
+              config:
+                severity: warn
+      - name: vulnerable_employment_pct
+        description: "Own-account and unpaid family workers, % of total employment, modeled ILO estimate (SL.EMP.VULN.ZS). A proxy for informal work"
+        data_tests:
+          - dbt_utils.accepted_range:
+              arguments:
+                min_value: 0
+                max_value: 100
+      - name: income_share_bottom20_pct
+        description: "Share of income or consumption held by the poorest 20%, % (SI.DST.FRST.20). From household surveys: null in non-survey years"
+        data_tests:
+          - dbt_utils.accepted_range:
+              arguments:
+                min_value: 0
+                max_value: 100
+      - name: electricity_access_pct
+        description: "% of population with access to electricity (EG.ELC.ACCS.ZS)"
+        data_tests:
+          - dbt_utils.accepted_range:
+              arguments:
+                min_value: 0
+                max_value: 100
+      - name: life_expectancy_years
+        description: "Life expectancy at birth, years (SP.DYN.LE00.IN)"
+        data_tests:
+          # Below 30 or above 90 would point to a units or parsing bug
+          - dbt_utils.accepted_range:
+              arguments:
+                min_value: 30
+                max_value: 90

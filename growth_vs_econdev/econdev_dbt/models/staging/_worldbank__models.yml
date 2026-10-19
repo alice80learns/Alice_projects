@@ -4,7 +4,7 @@ models:
   - name: stg_worldbank__indicators
     description: >
       World Bank indicators, cleaned and typed. One row per country, indicator
-      and year (5 countries x 4 indicators x 26 years = 520 rows). Nulls in
+      and year (5 countries x 9 indicators x 26 years = 1,170 rows). Nulls in
       `value` are kept: they mean the indicator wasn't measured that year.
     data_tests:
       # Grain: one row per country, indicator and year
@@ -43,7 +43,9 @@ models:
           - not_null
           - accepted_values:
               arguments:
-                values: [gdp_growth_pct, poverty_pct, mobile_per_100, unemployment_pct]
+                values: [gdp_growth_pct, poverty_pct, mobile_per_100, unemployment_pct,
+                         gdp_per_capita_growth_pct, vulnerable_employment_pct,
+                         income_share_bottom20_pct, electricity_access_pct, life_expectancy_years]
       - name: indicator_label
         description: "The World Bank's full indicator name, including units"
       - name: value

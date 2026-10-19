@@ -21,6 +21,16 @@ pivoted_counts as (
     select 'mobile_per_100', count(mobile_per_100) from {{ ref('int_indicators_pivoted') }}
     union all
     select 'unemployment_pct', count(unemployment_pct) from {{ ref('int_indicators_pivoted') }}
+    union all
+    select 'gdp_per_capita_growth_pct', count(gdp_per_capita_growth_pct) from {{ ref('int_indicators_pivoted') }}
+    union all
+    select 'vulnerable_employment_pct', count(vulnerable_employment_pct) from {{ ref('int_indicators_pivoted') }}
+    union all
+    select 'income_share_bottom20_pct', count(income_share_bottom20_pct) from {{ ref('int_indicators_pivoted') }}
+    union all
+    select 'electricity_access_pct', count(electricity_access_pct) from {{ ref('int_indicators_pivoted') }}
+    union all
+    select 'life_expectancy_years', count(life_expectancy_years) from {{ ref('int_indicators_pivoted') }}
 
 )
 

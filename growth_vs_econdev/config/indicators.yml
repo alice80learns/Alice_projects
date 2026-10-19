@@ -7,6 +7,11 @@ indicators:
   SI.POV.DDAY: poverty_pct
   IT.CEL.SETS.P2: mobile_per_100
   SL.UEM.TOTL.ZS: unemployment_pct
+  NY.GDP.PCAP.KD.ZG: gdp_per_capita_growth_pct
+  SL.EMP.VULN.ZS: vulnerable_employment_pct
+  SI.DST.FRST.20: income_share_bottom20_pct
+  EG.ELC.ACCS.ZS: electricity_access_pct
+  SP.DYN.LE00.IN: life_expectancy_years
 
 # Where the raw data lands. Project ids are not secrets; credentials are never stored here.
 bigquery:
