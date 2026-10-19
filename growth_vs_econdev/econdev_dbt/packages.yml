@@ -1,0 +1,5 @@
+# Community packages this project uses. Install with: dbt deps
+# dbt_utils adds ready-made tests (grain checks, value ranges, row counts).
+packages:
+  - package: dbt-labs/dbt_utils
+    version: [">=1.3.0", "<2.0.0"]

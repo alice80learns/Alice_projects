@@ -1,0 +1,26 @@
+# The dbt project's settings: its name, where things live, and how models are built.
+name: econdev
+version: "1.0.0"
+config-version: 2
+
+# Which connection (in profiles.yml) dbt uses to reach BigQuery.
+profile: econdev
+
+model-paths: ["models"]
+test-paths: ["tests"]
+seed-paths: ["seeds"]
+macro-paths: ["macros"]
+
+clean-targets: ["target", "dbt_packages"]
+
+# Materialisation = how each layer is built in BigQuery.
+#   view  -> a saved query; always shows the latest raw data, uses no storage
+#   table -> results stored physically; fast to query, rebuilt on each dbt run
+models:
+  econdev:
+    staging:
+      +materialized: view
+    intermediate:
+      +materialized: view
+    marts:
+      +materialized: table
