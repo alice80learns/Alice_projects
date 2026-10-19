@@ -612,10 +612,52 @@ A: Population, to get growth per person, and a better jobs measure, like informa
 
 > "Only partly. Growth and development moved together, but loosely: across 21 pairs of poverty surveys, the correlation between growth and the yearly change in poverty was about −0.1. Kenya grew steadily, yet poverty ended where it started. Nigeria's poverty rose again when its growth collapsed after 2015. And South Africa cut poverty sharply with almost no growth, so other factors were clearly at work. Mobile access spread everywhere, whatever the growth rate. Unemployment fell clearly only in Ghana, and rose by 10 points in South Africa. The chart that makes the case is the scatter of survey spans, because it tests the relationship directly and shows the outliers. The scorecard is the best summary. The biggest limitation is that poverty is measured in only 3 to 6 surveys per country, so we can't see what happened between them, and Ghana's latest is from 2016."
 
-## Phase 7: README and demo (preview)
+## Phase 7: README and demo
 
-- **Telling the story:** question, architecture, how to run, findings, limitations.
-- **A 5-minute walkthrough:** trace one number from the final chart back to the raw API record.
+**In one sentence:** make the project understandable in 30 seconds (README) and provable in 5 minutes (walkthrough).
+
+### What we added
+
+| File | What it does |
+| --- | --- |
+| `README.md` | The question and short answer first, then architecture diagram, data, tests, findings with charts, limitations, how to run |
+| `docs/WALKTHROUGH.md` | A timed demo script: trace Rwanda's 2016–23 poverty drop from the chart → mart → intermediate → staging → raw → live API |
+| `docs/images/` | Charts exported from the notebook so they show on GitHub |
+
+### Key concepts
+
+**1. Answer first.** A reviewer spends about 30 seconds on a README. The question and the short answer go at the top; how to run it goes near the bottom.
+
+**2. Lineage you can demonstrate.** Tracing one number back through every layer proves the pipeline is correct and that you understand every step. It's the strongest 5 minutes you can give in an interview.
+
+**3. Reproducibility.** Anyone can rebuild everything from code with two commands: `python -m ingestion.ingest`, then `dbt build`. The warehouse isn't precious; the code is.
+
+**4. Limitations are a strength.** Listing them shows judgement, and saves you from being caught out.
+
+**5. Diagrams as code.** The architecture diagram is Mermaid, which GitHub renders from text. It lives next to the code and is easy to update.
+
+### What to watch out for
+
+| Risk | How we guard against it |
+| --- | --- |
+| README claims that aren't true | Every number and command in it was checked against the real data and a real run |
+| "How to run" only works on your machine | Listed prerequisites, the project ids to change, and the SSL fix for `dbt deps` |
+| Source data changes after the demo was written | The World Bank revised poverty data on 2026-10-08, after our load. Re-run ingestion before a demo and check the walkthrough numbers |
+
+### Interview questions
+
+**Q: Walk me through your project.**
+A: Use `docs/WALKTHROUGH.md`: question → chart → mart → intermediate → staging → raw → API, then tests.
+
+**Q: How would someone else run it?**
+A: Clone it, install the requirements, log in with gcloud, set their project id, then run ingestion and `dbt build`. The BigQuery free sandbox is enough.
+
+**Q: What would you do differently or next?**
+A: Add population for growth per person, a job-quality measure, and an Airflow DAG to run ingestion then `dbt build` monthly.
+
+### Practice
+
+Do the walkthrough out loud with a timer, twice. Aim for under 5 minutes without reading the script.
 
 ---
 
