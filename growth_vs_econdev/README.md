@@ -85,6 +85,18 @@ Full analysis, with one chart per question: [`notebooks/analysis.ipynb`](noteboo
 
 **5. Mobile access spread everywhere, whatever the growth rate:** from almost nothing in 2000 to 70–180 subscriptions per 100 people by 2024.
 
+### Scorecard
+
+| Country | Avg GDP growth 2000–25 | Poverty: first → latest survey | Poverty change | Unemployment 2000 → 2025 | Mobile per 100 (2024) |
+| --- | --- | --- | --- | --- | --- |
+| Nigeria | 4.8% | 51.1% (2003) → 41.8% (2022) | −9.3 pp | 4.0% → 3.1% | 71 |
+| Kenya | 4.4% | 44.6% (2005) → 45.5% (2022) | +0.9 pp | 2.9% → 5.4% | 126 |
+| Ghana | 5.6% | 60.9% (2005) → 39.0% (2016) | −21.9 pp | 10.5% → 3.0% | 114 |
+| Rwanda | **7.5%** | 82.3% (2000) → 38.6% (2023) | **−43.7 pp** | 11.7% → 11.4% | 93 |
+| South Africa | 2.2% | 47.9% (2000) → 17.4% (2022) | −30.5 pp | 22.8% → **32.4%** | 179 |
+
+pp = percentage points. Read across a row to see one country's story: Rwanda had the fastest growth and the biggest fall in poverty; South Africa had the slowest growth, yet the second-biggest fall in poverty, while unemployment rose.
+
 **Conclusion:** growth helped but didn't guarantee better lives. Who benefits from growth mattered as much as how fast it was.
 
 ## Limitations
