@@ -549,15 +549,68 @@ A: Descriptions for every model and column live in YAML next to the SQL, plus an
 - [ ] What the docs site shows and where its content comes from
 - [ ] `packages.yml` vs `package-lock.yml` vs `dbt_packages/`
 
-### Explain-back prompt
+### Explain-back: polished version
 
-In a few sentences: what does a dbt test actually do, which test you'd keep if you could only have one (and why), and what happened when we broke the pivot.
+> "A dbt test is a SQL query that looks for bad rows: nulls in a key, duplicates, values out of range, or my own custom rule. If it returns zero rows, it passes. If I could keep only one, it would be the uniqueness test on each model's grain, because duplicate loads and join fan-out break the grain and silently inflate every sum and average downstream. To prove the tests actually work, I broke the pivot on purpose by mislabelling poverty. My custom test caught it, and `dbt build` skipped both marts, so the bad data never reached them."
 
-## Phase 6: Analysis notebook (preview)
+## Phase 6: Analysis notebook
 
-- **Reading only from the mart**, never raw tables.
-- **Correlation vs causation:** say "moved together", not "caused".
-- **Stating limitations:** sparse poverty data, modeled unemployment estimates.
+**In one sentence:** answer the business question in `notebooks/analysis.ipynb`, reading only from the two marts, with one question, one chart and one plain-words answer per section.
+
+### The questions and what we found
+
+| Question | Answer |
+| --- | --- |
+| 1. How fast did each economy grow? | Rwanda fastest and steadiest (~7.5%/yr). Nigeria collapsed after 2015 (7.2% → 1.5%). South Africa slowest throughout |
+| 2. Did poverty fall? | A lot in Rwanda (82% → 39%) and South Africa (48% → 17%). Kenya ended where it started; Nigeria rose again after 2018 |
+| 3. Did faster growth go with faster poverty reduction? | Only loosely: correlation about −0.1 across 21 survey spans. Growth helps but doesn't guarantee it |
+| 4. Did growth create jobs? | Mostly no. South Africa's unemployment rose 23% → 32%. Ghana's fell in the early 2000s |
+| 5. Did mobile access spread? | Everywhere, regardless of growth: from near 0 to 70–180 subscriptions per 100 people |
+
+**Overall answer:** only partly. Who benefits from growth mattered as much as how fast it was.
+
+### Key concepts
+
+**1. Read only from the marts.** The marts are tested and documented, so every number in the notebook traces back through dbt. If the analysis needs something new, add it to a model, not to the notebook.
+
+**2. Check the grain before charting.** The notebook asserts the row counts and uniqueness first. If they fail, every chart below is wrong.
+
+**3. Compare like with like.** Survey spans range from 1 to 10 years, so poverty change is divided by span length ("per year") before comparing countries.
+
+**4. Rolling averages have side effects.** Nigeria's 5-year average jumps in 2025 only because 2020 drops out of the window, not because of a boom.
+
+**5. Correlation vs causation.** Say "moved together", never "caused". With 5 countries and 21 spans, the outliers (South Africa cutting poverty with no growth; Kenya growing while poverty rose) are more informative than the correlation.
+
+**6. Know your indicator's weaknesses.** Unemployment is a modelled estimate and misses informal work. Mobile counts subscriptions, not people, and sudden drops are usually SIM-registration rules.
+
+**7. One colour per country, everywhere.** Readers learn the colours once. Names are written on the lines too, so colour is never the only clue.
+
+### What to watch out for
+
+| Risk | What happens | How we guard against it |
+| --- | --- | --- |
+| Forward-filling poverty | Invents data between surveys | Plot only survey years; dashed lines just connect them |
+| Over-reading a weak correlation | False story | State the sample size; discuss outliers |
+| GDP growth isn't per person | Overstates living standards | Listed as a limitation; next step is adding population |
+| Definition changes (SIM rules) | Fake drops in the data | Flag them in the text before using the numbers |
+
+### Interview questions
+
+**Q: What did you find?**
+A: Growth only partly translated into development. Rwanda grew fastest and cut poverty most. South Africa cut poverty with almost no growth, but its unemployment rose to 32%. Kenya grew steadily while poverty ended where it started. Across 21 survey spans, growth and poverty change barely correlated (about −0.1).
+
+**Q: Poverty is only measured every few years. How did you handle that?**
+A: I didn't fill the gaps. I built a mart at the survey-pair grain and compared poverty change per year with average growth over the same years.
+
+**Q: Does your analysis show growth reduces poverty?**
+A: No. It shows they moved together loosely. Five countries and 21 data points can't show cause. Other factors, like social grants or population growth, aren't in the data.
+
+**Q: What would you add next?**
+A: Population, to get growth per person, and a better jobs measure, like informal employment, because unemployment rates hide informality.
+
+### Explain-back: polished version
+
+> "Only partly. Growth and development moved together, but loosely: across 21 pairs of poverty surveys, the correlation between growth and the yearly change in poverty was about −0.1. Kenya grew steadily, yet poverty ended where it started. Nigeria's poverty rose again when its growth collapsed after 2015. And South Africa cut poverty sharply with almost no growth, so other factors were clearly at work. Mobile access spread everywhere, whatever the growth rate. Unemployment fell clearly only in Ghana, and rose by 10 points in South Africa. The chart that makes the case is the scatter of survey spans, because it tests the relationship directly and shows the outliers. The scorecard is the best summary. The biggest limitation is that poverty is measured in only 3 to 6 surveys per country, so we can't see what happened between them, and Ghana's latest is from 2016."
 
 ## Phase 7: README and demo (preview)
 
