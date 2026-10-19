@@ -13,7 +13,7 @@ with pivoted as (
 
 surveys as (
 
-    select country_iso3, country_name, year as survey_year, poverty_pct
+    select country_iso3, country_name, year as survey_year, poverty_pct, income_share_bottom20_pct
     from pivoted
     where poverty_pct is not null
 
@@ -28,7 +28,10 @@ spans as (
         lag(survey_year) over by_survey as start_year,
         survey_year as end_year,
         lag(poverty_pct) over by_survey as poverty_start_pct,
-        poverty_pct as poverty_end_pct
+        poverty_pct as poverty_end_pct,
+        -- the poorest 20%'s share comes from the same household surveys as poverty
+        lag(income_share_bottom20_pct) over by_survey as bottom20_start_pct,
+        income_share_bottom20_pct as bottom20_end_pct
     from surveys
     window by_survey as (partition by country_iso3 order by survey_year)
 
@@ -41,6 +44,7 @@ growth_in_span as (
         spans.country_iso3,
         spans.start_year,
         avg(pivoted.gdp_growth_pct) as avg_gdp_growth_pct,
+        avg(pivoted.gdp_per_capita_growth_pct) as avg_gdp_per_capita_growth_pct,
         -- compounding: 5% then 5% is 10.25% total, not 10%. exp(sum(ln(...))) multiplies the yearly rates.
         (exp(sum(ln(1 + pivoted.gdp_growth_pct / 100))) - 1) * 100 as cumulative_gdp_growth_pct
     from spans
@@ -67,6 +71,12 @@ final as (
 
         growth_in_span.avg_gdp_growth_pct,
         growth_in_span.cumulative_gdp_growth_pct,
+        growth_in_span.avg_gdp_per_capita_growth_pct,
+
+        -- did the poorest 20% get a bigger or smaller slice? positive = bigger
+        spans.bottom20_start_pct,
+        spans.bottom20_end_pct,
+        spans.bottom20_end_pct - spans.bottom20_start_pct as bottom20_change_pp,
 
         start_year_data.unemployment_pct as unemployment_start_pct,
         end_year_data.unemployment_pct as unemployment_end_pct,

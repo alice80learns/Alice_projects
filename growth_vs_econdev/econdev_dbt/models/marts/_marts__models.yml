@@ -28,6 +28,8 @@ models:
           - not_null
       - name: gdp_growth_pct
         description: "Annual GDP growth, %"
+      - name: gdp_per_capita_growth_pct
+        description: "Annual GDP growth per person, %"
       - name: gdp_growth_5yr_avg
         description: "Average GDP growth over this year and the 4 before it. Null until 5 years of data exist"
       - name: poverty_pct
@@ -36,10 +38,18 @@ models:
         description: "True when poverty_pct holds a real survey measurement for this year"
         data_tests:
           - not_null
+      - name: income_share_bottom20_pct
+        description: "Share of income or consumption held by the poorest 20%, %. Null in non-survey years"
       - name: unemployment_pct
         description: "Unemployment, % of labour force (modeled ILO estimate)"
       - name: unemployment_change_pp
         description: "Change in unemployment vs the previous year, in percentage points"
+      - name: vulnerable_employment_pct
+        description: "Own-account and unpaid family workers, % of employment (modeled ILO estimate). A proxy for informal work"
+      - name: electricity_access_pct
+        description: "% of population with access to electricity"
+      - name: life_expectancy_years
+        description: "Life expectancy at birth, years"
       - name: mobile_per_100
         description: "Mobile subscriptions per 100 people"
       - name: mobile_change_per_100
@@ -99,6 +109,21 @@ models:
         description: "Total compounded GDP growth over the span, %"
         data_tests:
           - not_null
+      - name: avg_gdp_per_capita_growth_pct
+        description: "Average annual GDP growth per person over the same years as avg_gdp_growth_pct"
+        data_tests:
+          - not_null
+      - name: bottom20_start_pct
+        description: "Income share of the poorest 20% at the earlier survey, %"
+        data_tests:
+          # Comes from the same surveys as poverty, so it should never be missing here
+          - not_null
+      - name: bottom20_end_pct
+        description: "Income share of the poorest 20% at the later survey, %"
+        data_tests:
+          - not_null
+      - name: bottom20_change_pp
+        description: "Change in the poorest 20%'s income share, percentage points. Positive = they got a bigger slice"
       - name: unemployment_start_pct
         description: "Unemployment in start_year, %"
       - name: unemployment_end_pct

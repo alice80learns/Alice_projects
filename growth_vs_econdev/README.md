@@ -1,10 +1,10 @@
 # Growth vs. Development
 
-**Does GDP growth translate into broad-based development (less poverty, more jobs, wider mobile access) in Nigeria, Kenya, Ghana, Rwanda and South Africa, 2000–2025?**
+**Does GDP growth translate into broad-based development (less poverty, a fairer share for the poorest, better jobs, better living standards, longer lives) in Nigeria, Kenya, Ghana, Rwanda and South Africa, 2000–2025?**
 
 An end-to-end ELT pipeline: World Bank API → Python → BigQuery → dbt → Jupyter.
 
-**Short answer: only partly.** Across 21 pairs of poverty surveys, growth and poverty reduction barely moved together (correlation about −0.1). Rwanda grew fastest and cut poverty the most, but South Africa cut poverty with almost no growth, and Kenya grew steadily while poverty ended where it started. [Findings below](#findings).
+**Short answer: only partly.** Across 21 pairs of poverty surveys, growth and poverty reduction barely moved together (correlation about −0.1), and growth told us nothing about whether the poorest 20% gained ground. Rwanda grew fastest and led on almost every measure, but South Africa cut poverty with almost no growth, and Kenya grew steadily while poverty ended where it started. Electricity and life expectancy improved everywhere. [Findings below](#findings).
 
 ---
 
@@ -12,14 +12,14 @@ An end-to-end ELT pipeline: World Bank API → Python → BigQuery → dbt → J
 
 ```mermaid
 flowchart LR
-    A["World Bank API<br/>4 indicators × 5 countries"] -->|"Python: paging, retries"| B[("BigQuery raw<br/>worldbank_indicators<br/>raw JSON, 520 rows")]
+    A["World Bank API<br/>9 indicators × 5 countries"] -->|"Python: paging, retries"| B[("BigQuery raw<br/>worldbank_indicators<br/>raw JSON, 1,170 rows")]
     B --> C["stg_worldbank__indicators<br/>typed, 1 row per country-indicator-year"]
     C --> D["int_indicators_pivoted<br/>1 row per country-year"]
     D --> E["fct_growth_vs_development<br/>country-year + trends"]
     D --> F["fct_poverty_survey_spans<br/>1 row per pair of poverty surveys"]
     E --> G["analysis.ipynb<br/>charts + findings"]
     F --> G
-    subgraph dbt ["dbt (BigQuery dbt_dev): 40 tests, docs site"]
+    subgraph dbt ["dbt (BigQuery dbt_dev): 48 tests, docs site"]
         C
         D
         E
@@ -45,21 +45,27 @@ flowchart LR
 | Poverty, % below **$3.00/day** (2021 PPP) | `SI.POV.DDAY` | **Only 3–6 survey years per country** |
 | Unemployment, % of labour force (modelled ILO estimate) | `SL.UEM.TOTL.ZS` | 2000–2025 |
 | Mobile subscriptions per 100 people | `IT.CEL.SETS.P2` | 2000–2024 |
+| GDP growth per person, annual % | `NY.GDP.PCAP.KD.ZG` | 2000–2025 |
+| Income share held by the poorest 20% | `SI.DST.FRST.20` | **Same surveys as poverty** |
+| Vulnerable employment, % of workers (modelled ILO estimate; a proxy for informal work) | `SL.EMP.VULN.ZS` | 2000–2025 |
+| Access to electricity, % of people | `EG.ELC.ACCS.ZS` | 2000–2024 |
+| Life expectancy at birth, years | `SP.DYN.LE00.IN` | 2000–2024 |
 
-Countries, years and indicators are set in [`config/indicators.yml`](config/indicators.yml). The ingestion code and the notebook both read that file, so they can't disagree about what's in scope.
+Countries, years and indicators are set in [`config/indicators.yml`](config/indicators.yml). The ingestion code and the notebook both read that file, so they can't disagree about what's in scope. The project started with the first 4 indicators. Adding the other 5 took config lines, dbt columns and tests, and no change to the ingestion code.
 
 **Data notes:**
 - The World Bank moved the extreme poverty line from $2.15 to **$3.00 a day** in 2025. Older articles quote different poverty numbers.
 - The World Bank revises past values. Each raw row keeps the indicator's `source_last_updated` date and the pipeline's `ingested_at` timestamp, and `dbt source freshness` warns when the data is more than 35 days old.
 - Missing years come back from the API as rows with a null value. They're kept as nulls, never filled in.
+- Before adding an indicator, I checked its coverage for all 5 countries. Household consumption per person was rejected because it has no Nigeria data at all.
 
 ## Data quality
 
-40 dbt tests run on every `dbt build`, at every layer:
+48 dbt tests run on every `dbt build`, at every layer:
 
 - **Grain** (`unique_combination_of_columns`) on the source and every model: catches double loads and join fan-out.
 - **Accepted values** on countries and indicator names: catches scope changes that weren't mapped through.
-- **Ranges** on percentages (0–100). GDP growth outside ±30% only **warns**, because extreme values can be real (wars, pandemics).
+- **Ranges** on percentages (0–100) and life expectancy (30–90 years). GDP growth outside ±30% only **warns**, because extreme values can be real (wars, pandemics).
 - **Row counts:** the country-year mart must have exactly as many rows as the pivot.
 - **A custom test** checks that the pivot never loses a value. I broke the pivot on purpose to watch it fail, and `dbt build` skipped both marts, so bad data never reached them.
 
@@ -81,34 +87,49 @@ Full analysis, with one chart per question: [`notebooks/analysis.ipynb`](noteboo
 
 ![Growth vs. poverty change per survey span](docs/images/growth_vs_poverty_scatter.png)
 
-**4. Growth didn't bring unemployment down.** South Africa's rose from 23% to 32%. Only Ghana improved clearly (10.5% → 3.0%).
+**4. Per person, Nigerians and South Africans have been getting poorer since 2015.** Taking population growth out, income per person shrank 0.7% a year in Nigeria and 0.6% in South Africa. Kenya was the only country to speed up.
 
-**5. Mobile access spread everywhere, whatever the growth rate:** from almost nothing in 2000 to 70–180 subscriptions per 100 people by 2024.
+![GDP growth per person by period](docs/images/growth_per_person.png)
+
+**5. The poorest 20% got a bigger slice in four countries, but not because of faster growth.** Rwanda (5.2% → 7.4%) and Kenya (5.0% → 7.1%) moved the most. Ghana grew fast, yet its poorest got a *smaller* share. Across the 21 spans, growth and the change in the poorest's share show no link (correlation 0.0).
+
+![Income share of the poorest 20%](docs/images/poorest_20_share.png)
+
+**6. Growth didn't bring unemployment down, and low unemployment hides insecure work.** South Africa's unemployment rose from 23% to 32%. Elsewhere it looks low (3–6%) because about two-thirds of Nigerian workers, and about 60% in Ghana and Kenya, are in vulnerable, mostly informal jobs. That share fell in Ghana (77% → 60%) but rose in Kenya.
+
+![Vulnerable employment](docs/images/vulnerable_employment.png)
+
+**7. Living standards and health improved everywhere, most in Rwanda.** Rwanda went from 6% to 72% of people with electricity, and its people now live 20 years longer (48 → 68). Nigeria gained the least electricity (43% → 62%) and still has the lowest life expectancy (55). Mobile access spread everywhere, whatever the growth rate.
+
+![Access to electricity](docs/images/electricity_access.png)
+
+![Life expectancy](docs/images/life_expectancy.png)
 
 ### Scorecard
 
-| Country | Avg GDP growth 2000–25 | Poverty: first → latest survey | Poverty change | Unemployment 2000 → 2025 | Mobile per 100 (2024) |
-| --- | --- | --- | --- | --- | --- |
-| Nigeria | 4.8% | 51.1% (2003) → 41.8% (2022) | −9.3 pp | 4.0% → 3.1% | 71 |
-| Kenya | 4.4% | 44.6% (2005) → 45.5% (2022) | +0.9 pp | 2.9% → 5.4% | 126 |
-| Ghana | 5.6% | 60.9% (2005) → 39.0% (2016) | −21.9 pp | 10.5% → 3.0% | 114 |
-| Rwanda | **7.5%** | 82.3% (2000) → 38.6% (2023) | **−43.7 pp** | 11.7% → 11.4% | 93 |
-| South Africa | 2.2% | 47.9% (2000) → 17.4% (2022) | −30.5 pp | 22.8% → **32.4%** | 179 |
+| Country | Avg GDP growth (per person) | Poverty: first → latest survey | Poorest 20% share | Unemployment 2000 → 2025 | Vulnerable work 2000 → 2025 | Electricity 2000 → 2024 | Life expectancy 2000 → 2024 |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| Nigeria | 4.8% (2.1%) | 51.1% → 41.8% | 5.7% → 7.5% | 4.0% → 3.1% | 74% → 66% | 43% → 62% | 47 → 55 |
+| Kenya | 4.4% (1.7%) | 44.6% → 45.5% | 5.0% → 7.1% | 2.9% → 5.4% | 59% → 64% | 15% → 77% | 56 → 64 |
+| Ghana | 5.6% (3.2%) | 60.9% → 39.0% | 5.2% → 4.7% | 10.5% → 3.0% | 77% → 60% | 44% → 92% | 58 → 66 |
+| Rwanda | **7.5% (5.1%)** | 82.3% → 38.6% | 5.2% → 7.4% | 11.7% → 11.4% | 47% → 39% | 6% → 72% | 48 → **68** |
+| South Africa | 2.2% (0.9%) | 47.9% → 17.4% | 3.1% → 3.7% | 22.8% → **32.4%** | 11% → 12% | 72% → 90% | 58 → 66 |
 
-pp = percentage points. Read across a row to see one country's story: Rwanda had the fastest growth and the biggest fall in poverty; South Africa had the slowest growth, yet the second-biggest fall in poverty, while unemployment rose.
+Averages are over 2000–2025. Poverty and the poorest 20%'s share compare each country's first and latest survey (years differ by country; see the notebook). Read across a row to see one country's story.
 
-**Conclusion:** growth helped but didn't guarantee better lives. Who benefits from growth mattered as much as how fast it was.
+**Conclusion:** growth helped but didn't guarantee better lives. Rwanda shows growth and development moving together; South Africa improved without growth; Kenya grew without poverty falling; Nigeria shows what happens when growth stops. Who benefits from growth mattered as much as how fast it was.
 
 ## Limitations
 
 1. **Poverty data is sparse:** 3–6 surveys per country, and Ghana's latest is 2016. Changes between surveys can partly reflect changes in survey methods.
-2. **Unemployment is a modelled estimate** and misses informal work, so low rates in Nigeria, Kenya and Ghana don't mean healthy job markets.
+2. **Unemployment and vulnerable employment are modelled ILO estimates,** not yearly measurements.
 3. **Mobile counts subscriptions, not people.** Sudden drops (Ghana 2023, Nigeria 2024) probably reflect SIM-registration rules.
 4. **Small sample:** 5 countries and 21 survey spans. These are patterns, not proof.
 5. **Correlation, not causation.** Factors such as social grants, oil prices and population growth aren't in the data.
-6. **GDP growth isn't per person.** With populations growing 2–3% a year, growth per person is much lower.
+6. **The poorest 20%'s share mixes income and consumption,** depending on each country's survey, so compare changes within a country rather than levels across countries.
+7. **Rwanda's electricity jump after 2021** (49% → 72%) may reflect a change in what counts as access, such as off-grid solar.
 
-**Next steps:** add population to get growth per person, add a job-quality measure such as informal employment, and schedule the pipeline monthly with Airflow.
+**Next steps:** investigate Kenya's puzzle (the poorest's share and GDP per person rose, but poverty didn't fall), schedule the pipeline monthly with Airflow, and run the tests in CI on every pull request.
 
 ## How to run it
 
@@ -132,7 +153,7 @@ python -m ingestion.ingest
 cd econdev_dbt
 dbt deps                    # installs dbt_utils (once)
 dbt source freshness        # is the raw data recent enough?
-dbt build                   # 4 models + 40 tests
+dbt build                   # 4 models + 48 tests
 dbt docs generate && dbt docs serve    # docs site with the lineage graph
 
 # 5. Unit tests for the ingestion code (from growth_vs_econdev/)
